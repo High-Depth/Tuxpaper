@@ -993,10 +993,10 @@ class TuxpaperApp(ctk.CTk):
     def _update_controls_scrollbar(self):
         """Hide the controls scrollbar when content fits the visible area."""
         try:
-            inner = self.controls_frame._scroll_frame
             canvas = self.controls_frame._parent_canvas
             canvas.update_idletasks()
-            if inner.winfo_reqheight() <= canvas.winfo_height():
+            bbox = canvas.bbox("all")
+            if bbox and bbox[3] <= canvas.winfo_height():
                 self.controls_frame._scrollbar.grid_remove()
             else:
                 self.controls_frame._scrollbar.grid()
