@@ -11,6 +11,7 @@
 <p align="center">
   <strong>Animated wallpapers for Linux — browse, tweak, and forget.</strong><br>
   Per-wallpaper settings, multi-monitor support, autostart, and a friendly GUI.
+  THERE WILL BE BUGS.
 </p>
 
 <p align="center">
