@@ -39,6 +39,11 @@ class WallpaperScanner:
         os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/workshop/content/431960"),
     ]
     VALID_EXTENSIONS = {'.mp4', '.webm'}
+    NSFW_TAGS = {
+        'nsfw', '18+', 'r18', '18禁', 'mature', 'adult', 'explicit',
+        'erotic', 'sexy', 'sexual', 'nudity', 'nude', 'porn', 'pornographic',
+        'hentai', 'ecchi', 'notsafeforwork', 'xxx',
+    }
 
     @classmethod
     def _config_dir(cls):
@@ -854,7 +859,7 @@ class TuxpaperApp(ctk.CTk):
         if self.nsfw_switch.get():
             filtered = [
                 w for w in filtered
-                if not any(t in ('nsfw', '18+') for t in w.tags)
+                if not any(t in WallpaperScanner.NSFW_TAGS for t in w.tags)
             ]
 
         # Search query filter
