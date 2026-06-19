@@ -2,6 +2,10 @@
   <img src="icons/tuxpaper.svg" width="120" alt="Tuxpaper Engine">
 </p>
 
+<p align="center">
+  <img src="screenshot.png" width="700" alt="Tuxpaper Engine screenshot">
+</p>
+
 <h1 align="center">Tuxpaper Engine</h1>
 
 <p align="center">
