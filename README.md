@@ -17,7 +17,7 @@
 
 ---
 
-A desktop app that finds your video wallpapers (Steam Workshop or local folders),
+A desktop app that finds your video wallpapers (Steam Workshop/Wallpaper Engine or local folders),
 lets you preview and apply them, and remembers every tweak you make — even across
 reboots and multiple monitors.
 
