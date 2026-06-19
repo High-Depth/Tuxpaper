@@ -23,39 +23,35 @@ reboots and multiple monitors.
 
 ---
 
-## 🚀 Install on Pop!\_OS / Ubuntu
-
-Copy and paste the whole block:
+## 🚀 Install (one-liner)
 
 ```bash
-# System dependencies
-sudo apt update
-sudo apt install -y git python3 python3-pip python3-venv socat \
-                    meson ninja-build libmpv-dev pkg-config
+curl -fsSL https://raw.githubusercontent.com/High-Depth/Tuxpaper/main/install.sh | bash
+```
 
-# Build and install mpvpaper (not in apt)
-git clone https://github.com/GhostNaN/mpvpaper /tmp/mpvpaper
-cd /tmp/mpvpaper && meson setup build && ninja -C build && sudo ninja -C build install
-cd ~ && rm -rf /tmp/mpvpaper
+That's it. The script will:
+1. Install system packages (`socat`, `meson`, `ninja-build`, `libmpv-dev`, etc.)
+2. Build and install [mpvpaper](https://github.com/GhostNaN/mpvpaper) from source
+3. Clone Tuxpaper Engine to `~/.local/share/Tuxpaper`
+4. Create a Python virtualenv with `customtkinter` + `Pillow`
+5. Install a desktop shortcut
+6. Ask about autostart on boot
+7. Launch the app
 
-# Clone and launch Tuxpaper Engine
-git clone https://github.com/High-Depth/Tuxpaper ~/.local/share/Tuxpaper
-chmod +x ~/.local/share/Tuxpaper/run.sh ~/.local/share/Tuxpaper/launcher.sh
+To skip the launch at the end (e.g. for scripting), set `SKIP_LAUNCH=1`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/High-Depth/Tuxpaper/main/install.sh | SKIP_LAUNCH=1 bash
+```
+
+### After install
+
+Run from terminal:
+```bash
 ~/.local/share/Tuxpaper/run.sh
 ```
 
-First launch will create a Python virtualenv and install `customtkinter` + `Pillow`
-automatically. After that, just run:
-
-```bash
-~/.local/share/Tuxpaper/run.sh
-```
-
-**Optional** — install a desktop shortcut so it appears in your app menu:
-
-```bash
-cd ~/.local/share/Tuxpaper && python3 install_shortcut.py
-```
+Or find **Tuxpaper Engine** in your app menu.
 
 ---
 
