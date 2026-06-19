@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/platform-linux-lightgrey" alt="Linux">
+  <img src="https://img.shields.io/badge/wayland-only-orange" alt="Wayland Only">
 </p>
 
 ---
@@ -56,6 +57,23 @@ Run from terminal:
 ```
 
 Or find **Tuxpaper Engine** in your app menu.
+
+---
+
+## 🖥️ Compatibility
+
+| Distro | Status |
+|--------|--------|
+| Pop!_OS | ✅ Supported (native target) |
+| Ubuntu | ✅ Supported |
+| Debian | ✅ Supported |
+| Linux Mint | ✅ Supported |
+| Elementary OS | ✅ Supported |
+| Zorin OS | ✅ Supported |
+| Kali Linux | ✅ Supported |
+| Arch / Fedora / openSUSE / others | ❌ Not yet — install.sh uses `apt` only |
+
+**Display server:** Wayland only. mpvpaper (the wallpaper renderer) requires the wlroots layer-shell protocol. X11 is not supported.
 
 ---
 
