@@ -884,9 +884,16 @@ class TuxpaperApp(ctk.CTk):
         self._rebuild_grid()
 
     def _rebuild_grid(self, query=None):
-        """Rebuild the wallpaper grid, optionally filtering by search query."""
+        """Rebuild the wallpaper grid — filters, calculates layout, then builds in batches."""
+        self._rebuild_cancelled = True
+        for cb in self._pending_callbacks:
+            self.after_cancel(cb)
+        self._pending_callbacks.clear()
+
         for w in self.wallpaper_grid.winfo_children():
             w.destroy()
+
+        self._rebuild_cancelled = False
 
         filtered = list(self.wallpapers)
 
@@ -913,16 +920,44 @@ class TuxpaperApp(ctk.CTk):
             self.status_bar.configure(text="No wallpapers match your filters")
             return
 
-        # Calculate dynamic columns based on available width
+        # Calculate dynamic columns and thumbnail size
         try:
             grid_width = self.wallpaper_grid.winfo_width()
         except Exception:
             grid_width = 600
-        columns = max(3, min(6, grid_width // 120))
-        for i, wp in enumerate(filtered):
+        columns = max(3, min(8, grid_width // 130))
+        col_width = (grid_width - (columns - 1) * 8) // columns
+        thumb_size = max(60, min(col_width - 30, 200))
+        for col in range(columns):
+            self.wallpaper_grid.grid_columnconfigure(col, weight=1, uniform="wp_col")
+
+        self._rebuild_filtered = filtered
+        self._rebuild_columns = columns
+        self._rebuild_thumb_size = thumb_size
+        self._rebuild_index = 0
+        self._rebuild_total = len(filtered)
+
+        # Start batched building
+        cb = self.after(1, self._rebuild_batch)
+        self._pending_callbacks.append(cb)
+
+    def _rebuild_batch(self):
+        """Build wallpaper widgets in small batches so the UI stays responsive."""
+        if self._rebuild_cancelled:
+            return
+
+        BATCH = 20
+        filtered = self._rebuild_filtered
+        columns = self._rebuild_columns
+        thumb_size = self._rebuild_thumb_size
+        start = self._rebuild_index
+
+        for i in range(start, min(start + BATCH, len(filtered))):
+            wp = filtered[i]
             row, col = divmod(i, columns)
             item = ctk.CTkFrame(self.wallpaper_grid, fg_color="transparent")
-            item.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
+            item.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+            item.grid_propagate(False)
 
             thumb = None
             if wp.preview_path and os.path.exists(wp.preview_path):
@@ -931,31 +966,43 @@ class TuxpaperApp(ctk.CTk):
                     if img.format == 'GIF':
                         img.seek(0)
                         img = img.convert('RGB')
-                    img.thumbnail((80, 80), Image.Resampling.LANCZOS)
-                    thumb = ctk.CTkImage(light_image=img, dark_image=img, size=(80, 80))
+                    img.thumbnail((thumb_size, thumb_size), Image.Resampling.LANCZOS)
+                    thumb = ctk.CTkImage(light_image=img, dark_image=img, size=(thumb_size, thumb_size))
                 except Exception:
                     pass
 
-            name = truncate_text(wp.title, max_length=16)
+            name = truncate_text(wp.title, max_length=max(10, thumb_size // 5))
             btn = ctk.CTkButton(item, text=name, image=thumb, compound="top",
-                                anchor="center", width=90,
-                                height=110 if thumb else 30,
+                                anchor="center", width=thumb_size,
+                                height=(thumb_size + 25) if thumb else 30,
                                 command=lambda w=wp: self.select_wallpaper(w))
             btn.pack(fill="both", expand=True)
-            self.wallpaper_grid.grid_columnconfigure(col, weight=1)
 
-        total = len(self.wallpapers)
-        shown = len(filtered)
-        if shown < total:
-            self.status_bar.configure(text=f"Showing {shown} of {total} wallpapers")
+        self._rebuild_index = start + BATCH
+
+        if self._rebuild_index < len(filtered):
+            self.status_bar.configure(text=f"Loading wallpapers... ({self._rebuild_index}/{len(filtered)})")
+            cb = self.after(1, self._rebuild_batch)
+            self._pending_callbacks.append(cb)
         else:
-            self.status_bar.configure(text=f"Found {total} wallpapers")
-        self._bind_mousewheel()
+            total = len(self.wallpapers)
+            shown = len(filtered)
+            if shown < total:
+                self.status_bar.configure(text=f"Showing {shown} of {total} wallpapers")
+            else:
+                self.status_bar.configure(text=f"Found {total} wallpapers")
+            self._bind_mousewheel()
 
     def _on_window_resize(self, event):
         if event.widget == self and hasattr(self, 'wallpaper_grid'):
-            query = self.search_entry.get() if hasattr(self, 'search_entry') else None
-            self._rebuild_grid(query)
+            if hasattr(self, '_resize_timer'):
+                self.after_cancel(self._resize_timer)
+            self._resize_timer = self.after(300, self._do_debounced_rebuild)
+
+    def _do_debounced_rebuild(self):
+        self._rebuild_cancelled = True
+        query = self.search_entry.get() if hasattr(self, 'search_entry') else None
+        self._rebuild_grid(query)
 
     def _bind_mousewheel(self):
         try:
