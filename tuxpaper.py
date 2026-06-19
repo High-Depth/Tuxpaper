@@ -7,7 +7,7 @@ your own folders) with per-wallpaper settings, per-monitor support, autostart,
 and headless boot. All the heavy lifting is done by mpvpaper under the hood.
 """
 
-import os, json, subprocess, re, glob, math, sys
+import os, json, subprocess, re, glob, math, sys, time
 import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image, ImageTk
@@ -296,6 +296,12 @@ class WallpaperManager:
     """Hands the wallpaper over to the launcher script so it stays up even when this app isn't running."""
 
     @staticmethod
+    def kill_all():
+        """Nuke every mpvpaper process — useful when switching monitor modes."""
+        subprocess.run(["pkill", "-f", "mpvpaper"], capture_output=True)
+        time.sleep(0.3)
+
+    @staticmethod
     def apply_wallpaper(video_path, audio_enabled=False, scaling_mode="fit", monitor="all"):
         try:
             launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launcher.sh")
@@ -343,6 +349,7 @@ class TuxpaperApp(ctk.CTk):
 
         if headless:
             self._enable_controls()
+            WallpaperManager.kill_all()
             self.auto_apply_last_wallpaper_on_startup()
             self.after(1500, self.destroy)
             return
@@ -355,6 +362,7 @@ class TuxpaperApp(ctk.CTk):
 
         self._update_scaling_button_states(self.scaling_mode)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        WallpaperManager.kill_all()
         self.load_wallpapers()
         self.auto_apply_last_wallpaper_on_startup()
 
@@ -375,7 +383,7 @@ class TuxpaperApp(ctk.CTk):
                         if m:
                             monitors.append(m.group(1))
                 if monitors:
-                    return monitors
+                    return sorted(monitors)
         except Exception:
             pass
         return ["eDP-1"]
@@ -400,14 +408,13 @@ class TuxpaperApp(ctk.CTk):
         # -- Sidebar on the left (preview + controls) --------------------
         self.sidebar = ctk.CTkFrame(self, width=250, corner_radius=0)
         self.sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        self.sidebar.grid_rowconfigure(4, weight=1)
 
         ctk.CTkLabel(self.sidebar, text="Preview",
                      font=ctk.CTkFont(size=20, weight="bold"))\
-            .grid(row=0, column=0, padx=20, pady=(20, 10))
+            .grid(row=0, column=0, padx=20, pady=(15, 5))
 
         self.preview_frame = ctk.CTkFrame(self.sidebar)
-        self.preview_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
+        self.preview_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
         self.preview_frame.grid_rowconfigure(0, weight=1)
         self.preview_frame.grid_columnconfigure(0, weight=1)
 
@@ -418,7 +425,7 @@ class TuxpaperApp(ctk.CTk):
             self.sidebar, text="Select a wallpaper",
             font=ctk.CTkFont(size=16, weight="bold"),
             wraplength=200, justify="center")
-        self.title_label.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.title_label.grid(row=2, column=0, padx=20, pady=(5, 8), sticky="ew")
 
         # -- Monitor selection -------------------------------------------
         self.monitor_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -444,7 +451,7 @@ class TuxpaperApp(ctk.CTk):
             short = m[:10]
             btn = ctk.CTkButton(self.monitor_btn_frame, text=short, height=26,
                                 font=ctk.CTkFont(size=11),
-                                command=lambda name=m: self._toggle_monitor(name))
+                                command=lambda name=m: self._select_monitor(name))
             btn.grid(row=0, column=i, padx=2, pady=1, sticky="ew")
             self.monitor_btn_frame.grid_columnconfigure(i, weight=1)
             self.monitor_buttons[m] = btn
@@ -454,33 +461,35 @@ class TuxpaperApp(ctk.CTk):
         if self.monitor_mode == "all":
             self.monitor_btn_frame.grid_remove()
 
+        self.sidebar.grid_rowconfigure(5, weight=1)
+
         # -- Action buttons (simplified) ---------------------------------
         self.button_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.button_frame.grid(row=4, column=0, padx=20, pady=5, sticky="ew")
+        self.button_frame.grid(row=4, column=0, padx=20, pady=3, sticky="ew")
         self.button_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.apply_btn = ctk.CTkButton(self.button_frame, text="Apply Wallpaper",
                                        font=ctk.CTkFont(size=14, weight="bold"),
                                        height=35, command=self.apply_current_wallpaper,
                                        state="disabled")
-        self.apply_btn.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        self.apply_btn.grid(row=0, column=0, columnspan=2, padx=5, pady=3, sticky="ew")
 
         self.autostart_switch = ctk.CTkSwitch(
             self.button_frame, text="Auto-start on boot",
             command=self.toggle_autostart, font=ctk.CTkFont(size=12))
-        self.autostart_switch.grid(row=1, column=0, columnspan=2, padx=5, pady=(5, 0), sticky="ew")
+        self.autostart_switch.grid(row=1, column=0, columnspan=2, padx=5, pady=(3, 0), sticky="ew")
         if self.is_autostart_enabled():
             self.autostart_switch.select()
 
         # -- All the fine-tuning controls --------------------------------
-        self.controls_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.controls_frame.grid(row=5, column=0, padx=20, pady=(5, 5), sticky="nsew")
+        self.controls_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
+        self.controls_frame.grid(row=5, column=0, padx=20, pady=(3, 3), sticky="nsew")
         self.controls_frame.grid_columnconfigure((0, 1), weight=1)
 
         # Scaling mode
         ctk.CTkLabel(self.controls_frame, text="Scaling Mode:",
                      font=ctk.CTkFont(size=12, weight="bold"))\
-            .grid(row=0, column=0, columnspan=2, padx=0, pady=(0, 3), sticky="w")
+            .grid(row=0, column=0, columnspan=2, padx=0, pady=(0, 2), sticky="w")
 
         self.stretch_btn = ctk.CTkButton(self.controls_frame, text="Stretch", height=28,
                                          command=lambda: self.change_scaling("stretch"),
@@ -507,7 +516,7 @@ class TuxpaperApp(ctk.CTk):
         # Position D-pad
         ctk.CTkLabel(self.controls_frame, text="Position:",
                      font=ctk.CTkFont(size=12, weight="bold"))\
-            .grid(row=3, column=0, columnspan=2, padx=0, pady=(5, 3), sticky="w")
+            .grid(row=3, column=0, columnspan=2, padx=0, pady=(3, 2), sticky="w")
 
         pos_frame = ctk.CTkFrame(self.controls_frame, fg_color="transparent")
         pos_frame.grid(row=4, column=0, columnspan=2, padx=0, pady=2, sticky="ew")
@@ -555,7 +564,7 @@ class TuxpaperApp(ctk.CTk):
         # Zoom slider
         ctk.CTkLabel(self.controls_frame, text="Zoom:",
                      font=ctk.CTkFont(size=12, weight="bold"))\
-            .grid(row=7, column=0, columnspan=2, padx=0, pady=(5, 3), sticky="w")
+            .grid(row=7, column=0, columnspan=2, padx=0, pady=(3, 2), sticky="w")
 
         self.zoom_slider = ctk.CTkSlider(self.controls_frame, from_=10, to=200,
                                          number_of_steps=38, command=self.change_zoom,
@@ -569,7 +578,7 @@ class TuxpaperApp(ctk.CTk):
         # Volume slider
         ctk.CTkLabel(self.controls_frame, text="Volume:",
                      font=ctk.CTkFont(size=12, weight="bold"))\
-            .grid(row=9, column=0, columnspan=2, padx=0, pady=(5, 3), sticky="w")
+            .grid(row=9, column=0, columnspan=2, padx=0, pady=(3, 2), sticky="w")
 
         self.volume_slider = ctk.CTkSlider(self.controls_frame, from_=0, to=100,
                                            number_of_steps=100, command=self.change_volume,
@@ -590,7 +599,7 @@ class TuxpaperApp(ctk.CTk):
         # Speed slider
         ctk.CTkLabel(self.controls_frame, text="Speed:",
                      font=ctk.CTkFont(size=12, weight="bold"))\
-            .grid(row=12, column=0, columnspan=2, padx=0, pady=(5, 3), sticky="w")
+            .grid(row=12, column=0, columnspan=2, padx=0, pady=(3, 2), sticky="w")
 
         self.speed_slider = ctk.CTkSlider(self.controls_frame, from_=0.0, to=4.0,
                                           number_of_steps=80, command=self.change_speed,
@@ -606,12 +615,12 @@ class TuxpaperApp(ctk.CTk):
                                        font=ctk.CTkFont(size=14, weight="bold"),
                                        height=32, command=self.toggle_pause,
                                        state="disabled")
-        self.pause_btn.grid(row=15, column=0, columnspan=2, padx=0, pady=5, sticky="ew")
+        self.pause_btn.grid(row=15, column=0, columnspan=2, padx=0, pady=(3, 0), sticky="ew")
 
-        # Refresh button at the bottom of the sidebar
-        ctk.CTkButton(self.sidebar, text="🔄 Refresh List",
+        # Refresh list button (inline in the scrollable controls)
+        ctk.CTkButton(self.controls_frame, text="🔄 Refresh List",
                       command=self.load_wallpapers)\
-            .grid(row=6, column=0, padx=20, pady=20)
+            .grid(row=16, column=0, columnspan=2, padx=0, pady=(8, 15), sticky="ew")
 
         self.status_bar = ctk.CTkLabel(self, text="Ready", anchor="w")
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
@@ -626,16 +635,14 @@ class TuxpaperApp(ctk.CTk):
         if new_mode == self.monitor_mode:
             return
 
-        # Save current state
         self._save_current_wallpaper_settings()
 
         if new_mode == "all":
-            # Kill individual instances, start all-monitors
             self.monitor_btn_frame.grid_remove()
             self.selected_monitors = list(self.monitors)
         else:
-            # Kill all-monitors instance, start per-monitor
             self.monitor_btn_frame.grid()
+            self.selected_monitors = [self.monitors[0]]
 
         self.monitor_mode = new_mode
         self.monitor_btn_frame.grid_remove() if new_mode == "all" else self.monitor_btn_frame.grid()
@@ -643,26 +650,19 @@ class TuxpaperApp(ctk.CTk):
         self.settings["monitor_mode"] = new_mode
         WallpaperScanner.save_settings(self.settings)
 
-        # Re-apply current wallpaper in new mode
         if self.current_wallpaper:
             self.status_bar.configure(text=f"Switched to {value} mode — reapplying...")
+            WallpaperManager.kill_all()
             self.apply_current_wallpaper()
 
-    def _toggle_monitor(self, monitor):
-        """Toggle a specific monitor on/off in per-monitor mode."""
-        if monitor in self.selected_monitors:
-            if len(self.selected_monitors) <= 1:
-                self.status_bar.configure(text="Can't deselect — at least one monitor required")
-                return
-            self.selected_monitors.remove(monitor)
-        else:
-            self.selected_monitors.append(monitor)
+    def _select_monitor(self, monitor):
+        """Select a single target monitor in per-monitor mode."""
+        self.selected_monitors = [monitor]
         self._update_monitor_button_states()
-        self.status_bar.configure(
-            text=f"Selected: {', '.join(self.selected_monitors) or 'none'}")
+        self.status_bar.configure(text=f"Selected: {monitor}")
 
     def _update_monitor_button_states(self):
-        """Highlight selected monitors."""
+        """Highlight the active monitor(s)."""
         for name, btn in self.monitor_buttons.items():
             if self.monitor_mode == "all" or name in self.selected_monitors:
                 btn.configure(fg_color=("#3a7ebf", "#1f538d"))
@@ -749,8 +749,7 @@ class TuxpaperApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def select_wallpaper(self, wp):
-        """Pick a wallpaper and apply to the selected monitors."""
-        # Cancel any pending IPC callbacks from the previous selection
+        """Pick a wallpaper and apply to all monitors (per-monitor mode) or one all-mode instance."""
         for cb in self._pending_callbacks:
             self.after_cancel(cb)
         self._pending_callbacks.clear()
@@ -762,6 +761,7 @@ class TuxpaperApp(ctk.CTk):
         self._reset_ui_widgets()
         self._enable_controls()
 
+        # In per-monitor mode: only the selected monitor gets the wallpaper
         targets = self._get_target_monitors()
         for monitor in targets:
             try:
@@ -783,22 +783,31 @@ class TuxpaperApp(ctk.CTk):
         self.status_bar.configure(text=f"Selected: {wp.title}")
 
     def apply_current_wallpaper(self):
-        """Re-apply the currently selected wallpaper with whatever settings are active."""
+        """Re-apply the currently selected wallpaper to all monitors with current settings."""
         if not self.current_wallpaper:
             return
         scaling_mode = self.scaling_mode
+        # Apply to the selected monitor(s) only
         targets = self._get_target_monitors()
+
+        self._reset_state()
+        self._reset_ui_widgets()
+        self._enable_controls()
+        self._update_scaling_button_states(scaling_mode)
 
         for monitor in targets:
             if WallpaperManager.apply_wallpaper(self.current_wallpaper.file_path,
                                                 self.audio_enabled, scaling_mode, monitor):
-                self.status_bar.configure(text=f"Applied to {monitor}: {self.current_wallpaper.title}")
-                self._reset_state()
-                self._reset_ui_widgets()
-                self._enable_controls()
-                self._update_scaling_button_states(scaling_mode)
                 self._save_wallpaper_info(monitor)
-                self._save_current_wallpaper_settings()
+
+        # Restore per-monitor settings after all instances are running
+        for monitor in targets:
+            self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
+            self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
+                self.current_wallpaper.file_path, restore_pause=False, monitor=m))
+
+        self._save_current_wallpaper_settings()
+        self.status_bar.configure(text=f"Applied: {self.current_wallpaper.title}")
 
     def _reset_state(self):
         """Put all the knobs back to square one."""

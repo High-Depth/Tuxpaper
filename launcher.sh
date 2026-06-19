@@ -17,7 +17,7 @@ fi
 
 SOCKET="/tmp/mpvpaper-socket-${MONITOR}"
 
-# Kill only the mpvpaper using this socket path — works for both "all" and per-monitor
+# Kill only the mpvpaper using this socket path — leaves other monitors alone
 pkill -f "input-ipc-server=${SOCKET}" 2>/dev/null || true
 sleep 0.2
 
