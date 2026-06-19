@@ -17,9 +17,8 @@ fi
 
 SOCKET="/tmp/mpvpaper-socket-${MONITOR}"
 
-# Kill only the mpvpaper for this specific monitor
-# The pattern matches the monitor name as an argument to mpvpaper
-pkill -f "mpvpaper .* ${MONITOR} " 2>/dev/null || true
+# Kill only the mpvpaper using this socket path — works for both "all" and per-monitor
+pkill -f "input-ipc-server=${SOCKET}" 2>/dev/null || true
 sleep 0.2
 
 # Set audio option based on flag

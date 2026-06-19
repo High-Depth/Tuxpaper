@@ -333,6 +333,9 @@ class TuxpaperApp(ctk.CTk):
         self.zoom_percent = 100
         self.volume_level = 100
 
+        # Track pending after() callbacks to cancel on wallpaper switch
+        self._pending_callbacks = []
+
         # Multi-monitor state
         self.monitors = self._detect_monitors()
         self.monitor_mode = self.settings.get("monitor_mode", "all")
@@ -747,6 +750,11 @@ class TuxpaperApp(ctk.CTk):
 
     def select_wallpaper(self, wp):
         """Pick a wallpaper and apply to the selected monitors."""
+        # Cancel any pending IPC callbacks from the previous selection
+        for cb in self._pending_callbacks:
+            self.after_cancel(cb)
+        self._pending_callbacks.clear()
+
         self._save_current_wallpaper_settings()
         self.current_wallpaper = wp
         self.title_label.configure(text=wp.title)
@@ -761,9 +769,11 @@ class TuxpaperApp(ctk.CTk):
                                                     self.scaling_mode, monitor):
                     self.status_bar.configure(text=f"Applied to {monitor}: {wp.title}")
                     self._save_wallpaper_info(monitor)
-                    self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
-                    self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
+                    cb1 = self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
+                    self._pending_callbacks.append(cb1)
+                    cb2 = self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
                         wp.file_path, restore_pause=True, monitor=m))
+                    self._pending_callbacks.append(cb2)
                 else:
                     self.status_bar.configure(text=f"Failed to apply to {monitor}: {wp.title}")
             except Exception as e:
