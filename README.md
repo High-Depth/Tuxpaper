@@ -85,7 +85,8 @@ Or find **Tuxpaper Engine** in your app menu.
 | **Browse** | Scan Steam Workshop & local folders; thumbnail grid with scroll |
 | **Search** | Filter grid by name on Enter/🔍; ✕ clears; works alongside NSFW filter |
 | **NSFW Filter** | Toggle to hide adult wallpapers by tags, content rating (Mature/Questionable), or filename |
-| **Preview** | Live preview of any wallpaper before applying |
+| **Responsive Grid** | Dynamic columns + thumbnail sizes adapt to window width; batched loading (no UI freeze) |
+| **Native File Picker** | Uses zenity (GNOME) or kdialog (KDE) for folder selection instead of tkinter |
 | **Sources** | Privacy-first — no auto-scan. Toggle Steam Workshop, add/remove local folders, all from sidebar |
 | **Scaling** | Stretch, Fit, Fill, or Center — per-wallpaper |
 | **Position** | D-pad nudges the wallpaper up/down/left/right |

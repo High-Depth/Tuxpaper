@@ -17,7 +17,7 @@ def create_desktop():
     icon = ICON if os.path.exists(ICON) else "preferences-desktop-wallpaper"
 
     content = f"""[Desktop Entry]
-Version=1.1
+Version=1.2
 Type=Application
 Name=Tuxpaper Engine
 GenericName=Animated Wallpaper Manager
