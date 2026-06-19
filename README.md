@@ -18,7 +18,7 @@
 ---
 
 A desktop app that finds your video wallpapers (Steam Workshop/Wallpaper Engine or local folders),
-lets you preview and apply them, and remembers every tweak you make — even across
+lets you preview, search, and apply them, and remembers every tweak you make — even across
 reboots and multiple monitors.
 
 ---
@@ -61,7 +61,10 @@ Or find **Tuxpaper Engine** in your app menu.
 |----------|-------------|
 | **Formats** | `.mp4` and `.webm` — from Steam Workshop or local folders |
 | **Browse** | Scan Steam Workshop & local folders; thumbnail grid with scroll |
+| **Search** | Filter grid by name on Enter/🔍; ✕ clears; works alongside NSFW filter |
+| **NSFW Filter** | Toggle to hide adult wallpapers by tags, content rating (Mature/Questionable), or filename |
 | **Preview** | Live preview of any wallpaper before applying |
+| **Sources** | Privacy-first — no auto-scan. Toggle Steam Workshop, add/remove local folders, all from sidebar |
 | **Scaling** | Stretch, Fit, Fill, or Center — per-wallpaper |
 | **Position** | D-pad nudges the wallpaper up/down/left/right |
 | **Zoom** | 10%–200% in 5% snap increments |
@@ -69,10 +72,10 @@ Or find **Tuxpaper Engine** in your app menu.
 | **Volume** | Slider + mute toggle; auto-unmutes on slider move |
 | **Speed** | 0.00x–4.00x playback speed |
 | **Pause/Play** | Freeze or resume any wallpaper |
-| **Multi-Monitor** | All monitors as one canvas, or individual wallpapers per screen |
-| **Persistence** | Every setting saved per wallpaper per monitor — restored on re-select |
-| **Autostart** | Boot-time restore: headless mode reapplies last layout |
+| **Multi-Monitor** | All monitors as one canvas, or individual wallpapers per screen — mode persists across reboots |
+| **Persistence** | Every setting saved per wallpaper per monitor — restored on re-select and on boot |
 | **Reset** | Wipe all saved settings for the current wallpaper back to defaults |
+| **Autostart** | Boot-time headless restore reapplies last layout with per-monitor wallpapers |
 
 ---
 
@@ -86,7 +89,8 @@ Tuxpaper Engine auto-detects your connected displays and lets you choose:
 Each monitor gets its own settings (position, zoom, volume, speed, flip, rotation,
 scaling mode). Switch between modes any time — settings are remembered per mode.
 
-On boot, every monitor is restored to its last wallpaper with its saved settings.
+On boot, every monitor is restored to its last wallpaper with its saved settings,
+and your chosen mode (All / Per Monitor) is restored automatically.
 
 ---
 
@@ -136,6 +140,7 @@ whenever you re-select a wallpaper.
 ├── tuxpaper.py          # Main application
 ├── launcher.sh          # Launches mpvpaper per monitor
 ├── run.sh               # User-friendly runner (venv setup + launch)
+├── install.sh           # One-liner installer (deps → mpvpaper → clone → venv → shortcut)
 ├── install_shortcut.py  # Desktop entry installer
 ├── icons/
 │   └── tuxpaper.svg     # Application icon
@@ -145,10 +150,10 @@ whenever you re-select a wallpaper.
 
 Config lives in `~/.config/tuxpaper/`:
 
-- `settings.json` — app preferences (default scaling, autostart, monitor mode)
-- `last_wallpaper.json` — per-monitor wallpaper restore data
+- `settings.json` — app preferences (default scaling, autostart, monitor mode, NSFW filter)
+- `last_wallpaper.json` — per-monitor wallpaper restore data (mode + per-monitor info)
 - `wallpaper_settings.json` — per-wallpaper-per-monitor settings
-- `sources.json` — enabled wallpaper sources
+- `sources.json` — enabled wallpaper sources (empty by default — privacy-first)
 
 ---
 
