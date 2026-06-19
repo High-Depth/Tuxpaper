@@ -21,12 +21,13 @@ def truncate_text(text, max_length=40):
 class Wallpaper:
     """A single wallpaper — knows its title, where the video lives, and where its preview image lives."""
 
-    def __init__(self, title, file_path, preview_path, folder_path, tags=None):
+    def __init__(self, title, file_path, preview_path, folder_path, tags=None, content_rating="Everyone"):
         self.title = title
         self.file_path = file_path
         self.preview_path = preview_path
         self.folder_path = folder_path
         self.tags = [t.lower() for t in (tags or [])]
+        self.content_rating = content_rating
 
 
 class WallpaperScanner:
@@ -257,7 +258,9 @@ class WallpaperScanner:
                     if os.path.exists(p):
                         preview = p
                         break
-                wallpapers.append(Wallpaper(title, file_path, preview, folder, tags=data.get('tags')))
+                wallpapers.append(Wallpaper(title, file_path, preview, folder,
+                                             tags=data.get('tags'),
+                                             content_rating=data.get('contentrating', 'Everyone')))
             except (json.JSONDecodeError, IOError):
                 continue
         return wallpapers
@@ -873,6 +876,8 @@ class TuxpaperApp(ctk.CTk):
             filtered = [
                 w for w in filtered
                 if not any(t in WallpaperScanner.NSFW_TAGS for t in w.tags)
+                and w.content_rating not in ("Mature", "Questionable")
+                and not any(t in w.title.lower() for t in WallpaperScanner.NSFW_TAGS)
             ]
 
         # Search query filter
