@@ -468,27 +468,9 @@ class TuxpaperApp(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
         self.sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
 
-        ctk.CTkLabel(self.sidebar, text="Preview",
-                     font=ctk.CTkFont(size=20, weight="bold"))\
-            .grid(row=0, column=0, padx=20, pady=(15, 5))
-
-        self.preview_frame = ctk.CTkFrame(self.sidebar)
-        self.preview_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
-        self.preview_frame.grid_rowconfigure(0, weight=1)
-        self.preview_frame.grid_columnconfigure(0, weight=1)
-
-        self.preview_label = ctk.CTkLabel(self.preview_frame, text="No preview available")
-        self.preview_label.grid(row=0, column=0, sticky="nsew")
-
-        self.title_label = ctk.CTkLabel(
-            self.sidebar, text="Select a wallpaper",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            wraplength=200, justify="center")
-        self.title_label.grid(row=2, column=0, padx=20, pady=(5, 8), sticky="ew")
-
         # -- Monitor selection -------------------------------------------
         self.monitor_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.monitor_frame.grid(row=3, column=0, padx=20, pady=(0, 5), sticky="ew")
+        self.monitor_frame.grid(row=0, column=0, padx=20, pady=(15, 5), sticky="ew")
         self.monitor_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(self.monitor_frame, text="Display:",
@@ -520,11 +502,11 @@ class TuxpaperApp(ctk.CTk):
         if self.monitor_mode == "all":
             self.monitor_btn_frame.grid_remove()
 
-        self.sidebar.grid_rowconfigure(6, weight=1)
+        self.sidebar.grid_rowconfigure(3, weight=1)
 
         # -- Sources section ----------------------------------------------
         self.sources_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.sources_frame.grid(row=4, column=0, padx=20, pady=(0, 3), sticky="ew")
+        self.sources_frame.grid(row=1, column=0, padx=20, pady=(0, 3), sticky="ew")
         self.sources_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self.sources_frame, text="Sources:",
@@ -566,7 +548,7 @@ class TuxpaperApp(ctk.CTk):
 
         # -- Action buttons (simplified) ---------------------------------
         self.button_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.button_frame.grid(row=5, column=0, padx=20, pady=3, sticky="ew")
+        self.button_frame.grid(row=2, column=0, padx=20, pady=3, sticky="ew")
         self.button_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.apply_btn = ctk.CTkButton(self.button_frame, text="Apply Wallpaper",
@@ -584,8 +566,26 @@ class TuxpaperApp(ctk.CTk):
 
         # -- All the fine-tuning controls --------------------------------
         self.controls_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
-        self.controls_frame.grid(row=6, column=0, padx=20, pady=(3, 3), sticky="nsew")
+        self.controls_frame.grid(row=3, column=0, padx=(20, 45), pady=(3, 3), sticky="nsew")
         self.controls_frame.grid_columnconfigure((0, 1), weight=1)
+
+        # Auto-hide the scrollbar when content fits
+        def _on_controls_content_change(_event=None):
+            try:
+                inner = self.controls_frame._scroll_frame
+                canvas = self.controls_frame._parent_canvas
+                if inner.winfo_reqheight() <= canvas.winfo_height():
+                    self.controls_frame._scrollbar.grid_remove()
+                else:
+                    self.controls_frame._scrollbar.grid()
+            except Exception:
+                pass
+        try:
+            inner = self.controls_frame._scroll_frame
+            inner.bind('<Configure>', _on_controls_content_change, add='+')
+            self.after(100, _on_controls_content_change)
+        except Exception:
+            pass
 
         # Scaling mode
         ctk.CTkLabel(self.controls_frame, text="Scaling Mode:",
@@ -1036,7 +1036,8 @@ class TuxpaperApp(ctk.CTk):
 
         self._save_current_wallpaper_settings()
         self.current_wallpaper = wp
-        self.title_label.configure(text=wp.title)
+        if hasattr(self, 'title_label'):
+            self.title_label.configure(text=wp.title)
         self._reset_state()
         self._reset_ui_widgets()
         self._enable_controls()
@@ -1059,7 +1060,8 @@ class TuxpaperApp(ctk.CTk):
             except Exception as e:
                 self.status_bar.configure(text=f"Error applying to {monitor}: {e}")
 
-        self._load_preview(wp)
+        if hasattr(self, 'preview_label'):
+            self._load_preview(wp)
         self.status_bar.configure(text=f"Selected: {wp.title}")
 
     def apply_current_wallpaper(self):
@@ -1162,6 +1164,8 @@ class TuxpaperApp(ctk.CTk):
 
     def _load_preview(self, wp):
         """Load and display the preview image for a wallpaper."""
+        if not hasattr(self, 'preview_label'):
+            return
         if wp.preview_path and os.path.exists(wp.preview_path):
             try:
                 img = Image.open(wp.preview_path)
