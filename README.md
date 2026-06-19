@@ -21,7 +21,41 @@ A desktop app that finds your video wallpapers (Steam Workshop or local folders)
 lets you preview and apply them, and remembers every tweak you make — even across
 reboots and multiple monitors.
 
-Built on [`mpvpaper`](https://github.com/GhostNaN/mpvpaper) and [`customtkinter`](https://github.com/TomSchimansky/CustomTkinter).
+---
+
+## 🚀 Install on Pop!\_OS / Ubuntu
+
+Copy and paste the whole block:
+
+```bash
+# System dependencies
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv socat \
+                    meson ninja-build libmpv-dev pkg-config
+
+# Build and install mpvpaper (not in apt)
+git clone https://github.com/GhostNaN/mpvpaper /tmp/mpvpaper
+cd /tmp/mpvpaper && meson setup build && ninja -C build && sudo ninja -C build install
+cd ~ && rm -rf /tmp/mpvpaper
+
+# Clone and launch Tuxpaper Engine
+git clone https://github.com/High-Depth/Tuxpaper ~/.local/share/Tuxpaper
+chmod +x ~/.local/share/Tuxpaper/run.sh ~/.local/share/Tuxpaper/launcher.sh
+~/.local/share/Tuxpaper/run.sh
+```
+
+First launch will create a Python virtualenv and install `customtkinter` + `Pillow`
+automatically. After that, just run:
+
+```bash
+~/.local/share/Tuxpaper/run.sh
+```
+
+**Optional** — install a desktop shortcut so it appears in your app menu:
+
+```bash
+cd ~/.local/share/Tuxpaper && python3 install_shortcut.py
+```
 
 ---
 
@@ -37,7 +71,7 @@ Built on [`mpvpaper`](https://github.com/GhostNaN/mpvpaper) and [`customtkinter`
 | **Flip & Rotate** | Mirror horizontally, rotate 90° CW/CCW |
 | **Volume** | Slider + mute toggle; auto-unmutes on slider move |
 | **Speed** | 0.00x–4.00x playback speed |
-| **Pause/Play** | Freeze or resume the video |
+| **Pause/Play** | Freeze or resume any wallpaper |
 | **Multi-Monitor** | All monitors as one canvas, or individual wallpapers per screen |
 | **Persistence** | Every setting saved per wallpaper per monitor — restored on re-select |
 | **Autostart** | Boot-time restore: headless mode reapplies last layout |
@@ -59,53 +93,12 @@ On boot, every monitor is restored to its last wallpaper with its saved settings
 
 ---
 
-## 🚀 Quick Start
-
-```bash
-git clone https://github.com/YOUR_USERNAME/Tuxpaper.git
-cd Tuxpaper
-chmod +x run.sh launcher.sh
-./run.sh
-```
-
-Install a desktop shortcut to find it in your app menu:
-
-```bash
-python3 install_shortcut.py
-```
-
----
-
-## 📦 Requirements
-
-**System packages** (install manually):
-
-- `mpvpaper` — applies the video as your wallpaper
-- `socat` — IPC communication with mpv
-- `python3` (≥ 3.9)
-
-**Python packages** (auto-installed by `run.sh`):
-
-- `customtkinter` — modern tkinter UI
-- `Pillow` — image thumbnails
-
-The launcher script creates a virtualenv and installs these automatically
-on first run.
-
----
-
 ## 🎮 Usage
 
 ### GUI mode
 
 ```bash
-./run.sh
-```
-
-Or with the alias:
-
-```bash
-tuxpaper
+~/.local/share/Tuxpaper/run.sh
 ```
 
 ### Headless mode (boot / scripting)
@@ -113,11 +106,11 @@ tuxpaper
 Applies the last wallpaper layout without showing the window:
 
 ```bash
-python3 tuxpaper.py --headless
+python3 ~/.local/share/Tuxpaper/tuxpaper.py --headless
 ```
 
-The **Auto-start on boot** toggle in the UI creates a desktop entry that runs
-headless mode on login.
+Toggle **Auto-start on boot** in the GUI to create a login entry that runs
+headless mode automatically.
 
 ---
 
@@ -132,17 +125,17 @@ Every wallpaper remembers its own state — per monitor:
 - Playback speed
 - Flip (on/off)
 - Rotation (0°/90°/180°/270°)
-- Pause state (on manual select; plays on boot)
+- Pause state (paused on manual select; playing on boot)
 
-Settings are persisted as JSON in `~/.config/tuxpaper/` and restored
-automatically whenever you re-select a wallpaper.
+Settings persist as JSON in `~/.config/tuxpaper/` and restore automatically
+whenever you re-select a wallpaper.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-Tuxpaper/
+~/.local/share/Tuxpaper/
 ├── tuxpaper.py          # Main application
 ├── launcher.sh          # Launches mpvpaper per monitor
 ├── run.sh               # User-friendly runner (venv setup + launch)
@@ -154,6 +147,7 @@ Tuxpaper/
 ```
 
 Config lives in `~/.config/tuxpaper/`:
+
 - `settings.json` — app preferences (default scaling, autostart, monitor mode)
 - `last_wallpaper.json` — per-monitor wallpaper restore data
 - `wallpaper_settings.json` — per-wallpaper-per-monitor settings

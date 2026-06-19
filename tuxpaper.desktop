@@ -2,11 +2,11 @@
 Version=1.0
 Type=Application
 Name=Tuxpaper Engine
-Comment=Manage and apply animated wallpapers from Wallpaper Engine
-Exec=/home/xazel/.local/share/Tuxpaper/run.sh
-Icon=/home/xazel/.local/share/Tuxpaper/icons/tuxpaper.svg
+Comment=Animated wallpaper manager for Linux
+Exec=$HOME/.local/share/Tuxpaper/run.sh
+Icon=$HOME/.local/share/Tuxpaper/icons/tuxpaper.svg
 Terminal=false
 Categories=Utility;Settings;DesktopSettings;
 Keywords=wallpaper;background;video;animated;
 StartupNotify=true
-Path=/home/xazel/.local/share/Tuxpaper
+Path=$HOME/.local/share/Tuxpaper
