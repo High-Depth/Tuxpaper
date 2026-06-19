@@ -9,13 +9,30 @@ and headless boot. All the heavy lifting is done by mpvpaper under the hood.
 
 import os, json, subprocess, re, glob, math, sys, time
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
-from PIL import Image, ImageTk
+from tkinter import messagebox
+from PIL import Image
 
 
 def truncate_text(text, max_length=40):
     """Chop text down to size and slap an ellipsis on it if it's too long."""
     return text if len(text) <= max_length else text[:max_length - 3] + "..."
+
+
+def pick_folder():
+    """Open the system's native file chooser, falling back to tkinter."""
+    for cmd, arg in [("zenity", "--file-selection --directory"),
+                     ("kdialog", "--getexistingdirectory")]:
+        try:
+            result = subprocess.run(
+                cmd.split() + arg.split(), capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                path = result.stdout.strip()
+                if path and os.path.isdir(path):
+                    return path
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    from tkinter import filedialog
+    return filedialog.askdirectory(title="Select a wallpaper folder")
 
 
 class Wallpaper:
@@ -388,6 +405,8 @@ class TuxpaperApp(ctk.CTk):
         self.load_wallpapers()
         self.auto_apply_last_wallpaper_on_startup()
 
+        self.bind('<Configure>', self._on_window_resize)
+
     # ------------------------------------------------------------------
     #  Monitor detection
     # ------------------------------------------------------------------
@@ -430,23 +449,23 @@ class TuxpaperApp(ctk.CTk):
         self.search_frame.grid_columnconfigure(0, weight=1)
 
         self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Search wallpapers...",
-                                         font=ctk.CTkFont(size=13))
+                                         font=ctk.CTkFont(size=12))
         self.search_entry.grid(row=0, column=0, padx=(0, 5), sticky="ew")
         self.search_entry.bind('<Return>', self._apply_search)
 
-        self.search_btn = ctk.CTkButton(self.search_frame, text="🔍", width=36, height=28,
-                                        command=self._apply_search, font=ctk.CTkFont(size=14))
+        self.search_btn = ctk.CTkButton(self.search_frame, text="🔍", width=32, height=26,
+                                        command=self._apply_search, font=ctk.CTkFont(size=13))
         self.search_btn.grid(row=0, column=1, padx=(0, 3))
 
-        self.clear_search_btn = ctk.CTkButton(self.search_frame, text="✕", width=36, height=28,
-                                              command=self._clear_search, font=ctk.CTkFont(size=14))
+        self.clear_search_btn = ctk.CTkButton(self.search_frame, text="✕", width=32, height=26,
+                                              command=self._clear_search, font=ctk.CTkFont(size=13))
         self.clear_search_btn.grid(row=0, column=2)
 
         self.wallpaper_grid = ctk.CTkScrollableFrame(self.main_panel)
-        self.wallpaper_grid.grid(row=1, column=0, padx=20, pady=20, sticky="nsew")
+        self.wallpaper_grid.grid(row=1, column=0, padx=15, pady=15, sticky="nsew")
 
         # -- Sidebar on the left (preview + controls) --------------------
-        self.sidebar = ctk.CTkFrame(self, width=250, corner_radius=0)
+        self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
         self.sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
 
         ctk.CTkLabel(self.sidebar, text="Preview",
@@ -489,8 +508,8 @@ class TuxpaperApp(ctk.CTk):
         self.monitor_buttons = {}
         for i, m in enumerate(self.monitors):
             short = m[:10]
-            btn = ctk.CTkButton(self.monitor_btn_frame, text=short, height=26,
-                                font=ctk.CTkFont(size=11),
+            btn = ctk.CTkButton(self.monitor_btn_frame, text=short, height=22,
+                                font=ctk.CTkFont(size=10),
                                 command=lambda name=m: self._select_monitor(name))
             btn.grid(row=0, column=i, padx=2, pady=1, sticky="ew")
             self.monitor_btn_frame.grid_columnconfigure(i, weight=1)
@@ -527,8 +546,8 @@ class TuxpaperApp(ctk.CTk):
 
         # Add folder button
         self.add_folder_btn = ctk.CTkButton(
-            self.sources_frame, text="+ Add Folder", height=24,
-            command=self._add_local_source, font=ctk.CTkFont(size=11))
+            self.sources_frame, text="+ Add Folder", height=22,
+            command=self._add_local_source, font=ctk.CTkFont(size=10))
         self.add_folder_btn.grid(row=2, column=0, columnspan=2, padx=0, pady=2, sticky="ew")
 
         # Local folder list
@@ -551,8 +570,8 @@ class TuxpaperApp(ctk.CTk):
         self.button_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.apply_btn = ctk.CTkButton(self.button_frame, text="Apply Wallpaper",
-                                       font=ctk.CTkFont(size=14, weight="bold"),
-                                       height=35, command=self.apply_current_wallpaper,
+                                       font=ctk.CTkFont(size=13, weight="bold"),
+                                       height=32, command=self.apply_current_wallpaper,
                                        state="disabled")
         self.apply_btn.grid(row=0, column=0, columnspan=2, padx=5, pady=3, sticky="ew")
 
@@ -573,21 +592,21 @@ class TuxpaperApp(ctk.CTk):
                      font=ctk.CTkFont(size=12, weight="bold"))\
             .grid(row=0, column=0, columnspan=2, padx=0, pady=(0, 2), sticky="w")
 
-        self.stretch_btn = ctk.CTkButton(self.controls_frame, text="Stretch", height=28,
+        self.stretch_btn = ctk.CTkButton(self.controls_frame, text="Stretch", height=24,
                                          command=lambda: self.change_scaling("stretch"),
-                                         state="disabled", font=ctk.CTkFont(size=12))
+                                         state="disabled", font=ctk.CTkFont(size=11))
         self.stretch_btn.grid(row=1, column=0, padx=(0, 3), pady=1, sticky="ew")
-        self.fit_btn = ctk.CTkButton(self.controls_frame, text="Fit", height=28,
+        self.fit_btn = ctk.CTkButton(self.controls_frame, text="Fit", height=24,
                                      command=lambda: self.change_scaling("fit"),
-                                     state="disabled", font=ctk.CTkFont(size=12))
+                                     state="disabled", font=ctk.CTkFont(size=11))
         self.fit_btn.grid(row=1, column=1, padx=(3, 0), pady=1, sticky="ew")
-        self.fill_btn = ctk.CTkButton(self.controls_frame, text="Fill", height=28,
+        self.fill_btn = ctk.CTkButton(self.controls_frame, text="Fill", height=24,
                                       command=lambda: self.change_scaling("fill"),
-                                      state="disabled", font=ctk.CTkFont(size=12))
+                                      state="disabled", font=ctk.CTkFont(size=11))
         self.fill_btn.grid(row=2, column=0, padx=(0, 3), pady=1, sticky="ew")
-        self.center_btn = ctk.CTkButton(self.controls_frame, text="Center", height=28,
+        self.center_btn = ctk.CTkButton(self.controls_frame, text="Center", height=24,
                                         command=lambda: self.change_scaling("center"),
-                                        state="disabled", font=ctk.CTkFont(size=12))
+                                        state="disabled", font=ctk.CTkFont(size=11))
         self.center_btn.grid(row=2, column=1, padx=(3, 0), pady=1, sticky="ew")
 
         self.scaling_buttons = {
@@ -604,42 +623,42 @@ class TuxpaperApp(ctk.CTk):
         pos_frame.grid(row=4, column=0, columnspan=2, padx=0, pady=2, sticky="ew")
         pos_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        self.up_btn = ctk.CTkButton(pos_frame, text="↑", width=30, height=30,
+        self.up_btn = ctk.CTkButton(pos_frame, text="↑", width=26, height=26,
                                     command=self.move_wallpaper_up, state="disabled",
-                                    font=ctk.CTkFont(size=16, weight="bold"))
+                                    font=ctk.CTkFont(size=14, weight="bold"))
         self.up_btn.grid(row=0, column=1, padx=2, pady=1, sticky="ew")
-        self.left_btn = ctk.CTkButton(pos_frame, text="←", width=30, height=30,
+        self.left_btn = ctk.CTkButton(pos_frame, text="←", width=26, height=26,
                                       command=self.move_wallpaper_left, state="disabled",
-                                      font=ctk.CTkFont(size=16, weight="bold"))
+                                      font=ctk.CTkFont(size=14, weight="bold"))
         self.left_btn.grid(row=1, column=0, padx=2, pady=1, sticky="ew")
-        self.reset_btn = ctk.CTkButton(pos_frame, text="✕", width=30, height=30,
+        self.reset_btn = ctk.CTkButton(pos_frame, text="✕", width=26, height=26,
                                        command=self.reset_wallpaper, state="disabled",
-                                       font=ctk.CTkFont(size=16, weight="bold"))
+                                       font=ctk.CTkFont(size=14, weight="bold"))
         self.reset_btn.grid(row=1, column=1, padx=2, pady=1, sticky="ew")
-        self.right_btn = ctk.CTkButton(pos_frame, text="→", width=30, height=30,
+        self.right_btn = ctk.CTkButton(pos_frame, text="→", width=26, height=26,
                                        command=self.move_wallpaper_right, state="disabled",
-                                       font=ctk.CTkFont(size=16, weight="bold"))
+                                       font=ctk.CTkFont(size=14, weight="bold"))
         self.right_btn.grid(row=1, column=2, padx=2, pady=1, sticky="ew")
-        self.down_btn = ctk.CTkButton(pos_frame, text="↓", width=30, height=30,
+        self.down_btn = ctk.CTkButton(pos_frame, text="↓", width=26, height=26,
                                       command=self.move_wallpaper_down, state="disabled",
-                                      font=ctk.CTkFont(size=16, weight="bold"))
+                                      font=ctk.CTkFont(size=14, weight="bold"))
         self.down_btn.grid(row=2, column=1, padx=2, pady=1, sticky="ew")
 
         # Flip + Rotate (right after position)
         self.flip_btn = ctk.CTkButton(self.controls_frame, text="⇄ Flip",
-                                      font=ctk.CTkFont(size=14, weight="bold"),
-                                      height=32, command=self.toggle_flip,
+                                      font=ctk.CTkFont(size=13, weight="bold"),
+                                      height=28, command=self.toggle_flip,
                                       state="disabled")
         self.flip_btn.grid(row=5, column=0, columnspan=2, padx=0, pady=2, sticky="ew")
 
         self.rotate_cw_btn = ctk.CTkButton(self.controls_frame, text="↻ Rotate CW",
-                                           font=ctk.CTkFont(size=12, weight="bold"),
-                                           height=28, command=self.rotate_cw,
+                                           font=ctk.CTkFont(size=11, weight="bold"),
+                                           height=24, command=self.rotate_cw,
                                            state="disabled")
         self.rotate_cw_btn.grid(row=6, column=0, padx=(0, 2), pady=2, sticky="ew")
         self.rotate_ccw_btn = ctk.CTkButton(self.controls_frame, text="↺ Rotate CCW",
-                                            font=ctk.CTkFont(size=12, weight="bold"),
-                                            height=28, command=self.rotate_ccw,
+                                            font=ctk.CTkFont(size=11, weight="bold"),
+                                            height=24, command=self.rotate_ccw,
                                             state="disabled")
         self.rotate_ccw_btn.grid(row=6, column=1, padx=(2, 0), pady=2, sticky="ew")
 
@@ -673,8 +692,8 @@ class TuxpaperApp(ctk.CTk):
 
         # Mute button (below volume)
         self.mute_btn = ctk.CTkButton(self.controls_frame, text="🔊 Unmute",
-                                      font=ctk.CTkFont(size=14, weight="bold"),
-                                      height=32, command=self.toggle_audio,
+                                      font=ctk.CTkFont(size=13, weight="bold"),
+                                      height=28, command=self.toggle_audio,
                                       state="disabled")
         self.mute_btn.grid(row=11, column=0, columnspan=2, padx=0, pady=2, sticky="ew")
 
@@ -694,8 +713,8 @@ class TuxpaperApp(ctk.CTk):
 
         # Pause button
         self.pause_btn = ctk.CTkButton(self.controls_frame, text="⏸ Pause",
-                                       font=ctk.CTkFont(size=14, weight="bold"),
-                                       height=32, command=self.toggle_pause,
+                                       font=ctk.CTkFont(size=13, weight="bold"),
+                                       height=28, command=self.toggle_pause,
                                        state="disabled")
         self.pause_btn.grid(row=15, column=0, columnspan=2, padx=0, pady=(3, 0), sticky="ew")
 
@@ -774,7 +793,7 @@ class TuxpaperApp(ctk.CTk):
 
     def _add_local_source(self):
         """Pick a folder and add it as a wallpaper source."""
-        folder = filedialog.askdirectory(title="Select a wallpaper folder")
+        folder = pick_folder()
         if not folder:
             return
         WallpaperScanner.add_local_source(folder)
@@ -809,8 +828,8 @@ class TuxpaperApp(ctk.CTk):
                 font=ctk.CTkFont(size=11), anchor="w")
             label.grid(row=i, column=0, padx=(0, 2), pady=1, sticky="w")
             rm_btn = ctk.CTkButton(
-                self.folder_list_frame, text="✕", width=22, height=18,
-                font=ctk.CTkFont(size=10),
+                self.folder_list_frame, text="✕", width=20, height=16,
+                font=ctk.CTkFont(size=9),
                 command=lambda p=path: self._remove_local_source(p))
             rm_btn.grid(row=i, column=1, padx=0, pady=1, sticky="e")
             self.folder_list_frame.grid_columnconfigure(0, weight=1)
@@ -894,11 +913,16 @@ class TuxpaperApp(ctk.CTk):
             self.status_bar.configure(text="No wallpapers match your filters")
             return
 
-        columns = 4
+        # Calculate dynamic columns based on available width
+        try:
+            grid_width = self.wallpaper_grid.winfo_width()
+        except Exception:
+            grid_width = 600
+        columns = max(3, min(6, grid_width // 120))
         for i, wp in enumerate(filtered):
             row, col = divmod(i, columns)
             item = ctk.CTkFrame(self.wallpaper_grid, fg_color="transparent")
-            item.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+            item.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
 
             thumb = None
             if wp.preview_path and os.path.exists(wp.preview_path):
@@ -907,15 +931,15 @@ class TuxpaperApp(ctk.CTk):
                     if img.format == 'GIF':
                         img.seek(0)
                         img = img.convert('RGB')
-                    img.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                    thumb = ctk.CTkImage(light_image=img, dark_image=img, size=(100, 100))
+                    img.thumbnail((80, 80), Image.Resampling.LANCZOS)
+                    thumb = ctk.CTkImage(light_image=img, dark_image=img, size=(80, 80))
                 except Exception:
                     pass
 
-            name = truncate_text(wp.title, max_length=20)
+            name = truncate_text(wp.title, max_length=16)
             btn = ctk.CTkButton(item, text=name, image=thumb, compound="top",
-                                anchor="center", width=100,
-                                height=130 if thumb else 30,
+                                anchor="center", width=90,
+                                height=110 if thumb else 30,
                                 command=lambda w=wp: self.select_wallpaper(w))
             btn.pack(fill="both", expand=True)
             self.wallpaper_grid.grid_columnconfigure(col, weight=1)
@@ -927,6 +951,11 @@ class TuxpaperApp(ctk.CTk):
         else:
             self.status_bar.configure(text=f"Found {total} wallpapers")
         self._bind_mousewheel()
+
+    def _on_window_resize(self, event):
+        if event.widget == self and hasattr(self, 'wallpaper_grid'):
+            query = self.search_entry.get() if hasattr(self, 'search_entry') else None
+            self._rebuild_grid(query)
 
     def _bind_mousewheel(self):
         try:
@@ -1093,7 +1122,7 @@ class TuxpaperApp(ctk.CTk):
                     img.seek(0)
                     img = img.convert('RGB')
                 ow, oh = img.size
-                scale = min(180 / ow, 120 / oh)
+                scale = min(150 / ow, 100 / oh)
                 new_size = (int(ow * scale), int(oh * scale))
                 img_resized = img.resize(new_size, Image.Resampling.LANCZOS)
                 self.preview_image = ctk.CTkImage(light_image=img_resized,
