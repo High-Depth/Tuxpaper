@@ -21,11 +21,12 @@ def truncate_text(text, max_length=40):
 class Wallpaper:
     """A single wallpaper — knows its title, where the video lives, and where its preview image lives."""
 
-    def __init__(self, title, file_path, preview_path, folder_path):
+    def __init__(self, title, file_path, preview_path, folder_path, tags=None):
         self.title = title
         self.file_path = file_path
         self.preview_path = preview_path
         self.folder_path = folder_path
+        self.tags = [t.lower() for t in (tags or [])]
 
 
 class WallpaperScanner:
@@ -238,7 +239,7 @@ class WallpaperScanner:
                     if os.path.exists(p):
                         preview = p
                         break
-                wallpapers.append(Wallpaper(title, file_path, preview, folder))
+                wallpapers.append(Wallpaper(title, file_path, preview, folder, tags=data.get('tags')))
             except (json.JSONDecodeError, IOError):
                 continue
         return wallpapers
@@ -399,11 +400,29 @@ class TuxpaperApp(ctk.CTk):
         # -- Wallpaper grid on the right ---------------------------------
         self.main_panel = ctk.CTkFrame(self, corner_radius=0)
         self.main_panel.grid(row=0, column=1, sticky="nsew")
-        self.main_panel.grid_rowconfigure(0, weight=1)
+        self.main_panel.grid_rowconfigure(1, weight=1)
         self.main_panel.grid_columnconfigure(0, weight=1)
 
+        # Search bar
+        self.search_frame = ctk.CTkFrame(self.main_panel, fg_color="transparent")
+        self.search_frame.grid(row=0, column=0, padx=20, pady=(15, 0), sticky="ew")
+        self.search_frame.grid_columnconfigure(0, weight=1)
+
+        self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Search wallpapers...",
+                                         font=ctk.CTkFont(size=13))
+        self.search_entry.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+        self.search_entry.bind('<Return>', self._apply_search)
+
+        self.search_btn = ctk.CTkButton(self.search_frame, text="🔍", width=36, height=28,
+                                        command=self._apply_search, font=ctk.CTkFont(size=14))
+        self.search_btn.grid(row=0, column=1, padx=(0, 3))
+
+        self.clear_search_btn = ctk.CTkButton(self.search_frame, text="✕", width=36, height=28,
+                                              command=self._clear_search, font=ctk.CTkFont(size=14))
+        self.clear_search_btn.grid(row=0, column=2)
+
         self.wallpaper_grid = ctk.CTkScrollableFrame(self.main_panel)
-        self.wallpaper_grid.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+        self.wallpaper_grid.grid(row=1, column=0, padx=20, pady=20, sticky="nsew")
 
         # -- Sidebar on the left (preview + controls) --------------------
         self.sidebar = ctk.CTkFrame(self, width=250, corner_radius=0)
@@ -495,6 +514,15 @@ class TuxpaperApp(ctk.CTk):
         self.folder_list_frame = ctk.CTkFrame(self.sources_frame, fg_color="transparent")
         self.folder_list_frame.grid(row=3, column=0, columnspan=2, padx=0, pady=0, sticky="ew")
         self._rebuild_folder_list()
+
+        # NSFW filter toggle
+        self.nsfw_enabled = self.settings.get("nsfw_filter", True)
+        self.nsfw_switch = ctk.CTkSwitch(
+            self.sources_frame, text="Hide NSFW",
+            command=self._toggle_nsfw_filter, font=ctk.CTkFont(size=12))
+        self.nsfw_switch.grid(row=4, column=0, columnspan=2, padx=0, pady=(3, 0), sticky="w")
+        if self.nsfw_enabled:
+            self.nsfw_switch.select()
 
         # -- Action buttons (simplified) ---------------------------------
         self.button_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -766,6 +794,22 @@ class TuxpaperApp(ctk.CTk):
             rm_btn.grid(row=i, column=1, padx=0, pady=1, sticky="e")
             self.folder_list_frame.grid_columnconfigure(0, weight=1)
 
+    def _toggle_nsfw_filter(self):
+        """Turn the NSFW filter on or off and re-apply."""
+        self.nsfw_enabled = self.nsfw_switch.get()
+        self.settings["nsfw_filter"] = self.nsfw_enabled
+        WallpaperScanner.save_settings(self.settings)
+        self._rebuild_grid(self.search_entry.get())
+
+    def _apply_search(self, event=None):
+        """Filter the grid by the search query (Enter key or button)."""
+        self._rebuild_grid(self.search_entry.get())
+
+    def _clear_search(self):
+        """Reset the search field and show all wallpapers."""
+        self.search_entry.delete(0, "end")
+        self._rebuild_grid()
+
     def _get_target_monitors(self):
         """Return the list of monitor names to send IPC/apply to."""
         if self.monitor_mode == "all":
@@ -784,11 +828,11 @@ class TuxpaperApp(ctk.CTk):
         """Scan for wallpapers and fill the grid with thumbnails."""
         self.status_bar.configure(text="Scanning...")
         self.update()
-        for w in self.wallpaper_grid.winfo_children():
-            w.destroy()
 
         self.wallpapers = WallpaperScanner.scan_wallpapers()
         if not self.wallpapers:
+            for w in self.wallpaper_grid.winfo_children():
+                w.destroy()
             sources = WallpaperScanner.load_config().get("sources", [])
             if not sources or not any(s.get("enabled") for s in sources):
                 self.status_bar.configure(
@@ -797,8 +841,38 @@ class TuxpaperApp(ctk.CTk):
                 self.status_bar.configure(text="No wallpapers found")
             return
 
+        self._rebuild_grid()
+
+    def _rebuild_grid(self, query=None):
+        """Rebuild the wallpaper grid, optionally filtering by search query."""
+        for w in self.wallpaper_grid.winfo_children():
+            w.destroy()
+
+        filtered = list(self.wallpapers)
+
+        # NSFW filter
+        if self.nsfw_switch.get():
+            filtered = [
+                w for w in filtered
+                if not any(t in ('nsfw', '18+') for t in w.tags)
+            ]
+
+        # Search query filter
+        if query:
+            q = query.strip().lower()
+            if q:
+                filtered = [
+                    w for w in filtered
+                    if q in w.title.lower()
+                    or any(q in tag for tag in w.tags)
+                ]
+
+        if not filtered:
+            self.status_bar.configure(text="No wallpapers match your filters")
+            return
+
         columns = 4
-        for i, wp in enumerate(self.wallpapers):
+        for i, wp in enumerate(filtered):
             row, col = divmod(i, columns)
             item = ctk.CTkFrame(self.wallpaper_grid, fg_color="transparent")
             item.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
@@ -823,7 +897,12 @@ class TuxpaperApp(ctk.CTk):
             btn.pack(fill="both", expand=True)
             self.wallpaper_grid.grid_columnconfigure(col, weight=1)
 
-        self.status_bar.configure(text=f"Found {len(self.wallpapers)} wallpapers")
+        total = len(self.wallpapers)
+        shown = len(filtered)
+        if shown < total:
+            self.status_bar.configure(text=f"Showing {shown} of {total} wallpapers")
+        else:
+            self.status_bar.configure(text=f"Found {total} wallpapers")
         self._bind_mousewheel()
 
     def _bind_mousewheel(self):
