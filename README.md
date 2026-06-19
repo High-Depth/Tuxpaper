@@ -63,6 +63,7 @@ cd ~/.local/share/Tuxpaper && python3 install_shortcut.py
 
 | Category | What it does |
 |----------|-------------|
+| **Formats** | `.mp4` and `.webm` — from Steam Workshop or local folders |
 | **Browse** | Scan Steam Workshop & local folders; thumbnail grid with scroll |
 | **Preview** | Live preview of any wallpaper before applying |
 | **Scaling** | Stretch, Fit, Fill, or Center — per-wallpaper |
