@@ -566,26 +566,9 @@ class TuxpaperApp(ctk.CTk):
 
         # -- All the fine-tuning controls --------------------------------
         self.controls_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
-        self.controls_frame.grid(row=3, column=0, padx=(20, 45), pady=(3, 3), sticky="nsew")
+        self.controls_frame.grid(row=3, column=0, padx=20, pady=(3, 3), sticky="nsew")
         self.controls_frame.grid_columnconfigure((0, 1), weight=1)
-
-        # Auto-hide the scrollbar when content fits
-        def _on_controls_content_change(_event=None):
-            try:
-                inner = self.controls_frame._scroll_frame
-                canvas = self.controls_frame._parent_canvas
-                if inner.winfo_reqheight() <= canvas.winfo_height():
-                    self.controls_frame._scrollbar.grid_remove()
-                else:
-                    self.controls_frame._scrollbar.grid()
-            except Exception:
-                pass
-        try:
-            inner = self.controls_frame._scroll_frame
-            inner.bind('<Configure>', _on_controls_content_change, add='+')
-            self.after(100, _on_controls_content_change)
-        except Exception:
-            pass
+        self.after(200, self._update_controls_scrollbar)
 
         # Scaling mode
         ctk.CTkLabel(self.controls_frame, text="Scaling Mode:",
@@ -992,17 +975,33 @@ class TuxpaperApp(ctk.CTk):
             else:
                 self.status_bar.configure(text=f"Found {total} wallpapers")
             self._bind_mousewheel()
+            self._update_controls_scrollbar()
 
     def _on_window_resize(self, event):
         if event.widget == self and hasattr(self, 'wallpaper_grid'):
             if hasattr(self, '_resize_timer'):
                 self.after_cancel(self._resize_timer)
             self._resize_timer = self.after(300, self._do_debounced_rebuild)
+        self._update_controls_scrollbar()
 
     def _do_debounced_rebuild(self):
         self._rebuild_cancelled = True
         query = self.search_entry.get() if hasattr(self, 'search_entry') else None
         self._rebuild_grid(query)
+        self._update_controls_scrollbar()
+
+    def _update_controls_scrollbar(self):
+        """Hide the controls scrollbar when content fits the visible area."""
+        try:
+            inner = self.controls_frame._scroll_frame
+            canvas = self.controls_frame._parent_canvas
+            canvas.update_idletasks()
+            if inner.winfo_reqheight() <= canvas.winfo_height():
+                self.controls_frame._scrollbar.grid_remove()
+            else:
+                self.controls_frame._scrollbar.grid()
+        except Exception:
+            pass
 
     def _bind_mousewheel(self):
         try:
