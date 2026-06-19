@@ -9,7 +9,7 @@ and headless boot. All the heavy lifting is done by mpvpaper under the hood.
 
 import os, json, subprocess, re, glob, math, sys, time
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from PIL import Image, ImageTk
 
 
@@ -63,7 +63,7 @@ class WallpaperScanner:
 
     @classmethod
     def get_default_config(cls):
-        return {"sources": [{"type": "steam_workshop", "enabled": True}]}
+        return {"sources": []}
 
     @classmethod
     def get_default_settings(cls):
@@ -461,11 +461,44 @@ class TuxpaperApp(ctk.CTk):
         if self.monitor_mode == "all":
             self.monitor_btn_frame.grid_remove()
 
-        self.sidebar.grid_rowconfigure(5, weight=1)
+        self.sidebar.grid_rowconfigure(6, weight=1)
+
+        # -- Sources section ----------------------------------------------
+        self.sources_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.sources_frame.grid(row=4, column=0, padx=20, pady=(0, 3), sticky="ew")
+        self.sources_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(self.sources_frame, text="Sources:",
+                     font=ctk.CTkFont(size=12, weight="bold"))\
+            .grid(row=0, column=0, columnspan=2, padx=0, pady=(0, 2), sticky="w")
+
+        # Steam Workshop toggle
+        sources_cfg = WallpaperScanner.load_config().get("sources", [])
+        self.steam_enabled = any(
+            s.get("type") == "steam_workshop" and s.get("enabled")
+            for s in sources_cfg
+        )
+        self.steam_switch = ctk.CTkSwitch(
+            self.sources_frame, text="Steam Workshop",
+            command=self._toggle_steam_source, font=ctk.CTkFont(size=12))
+        self.steam_switch.grid(row=1, column=0, columnspan=2, padx=0, pady=1, sticky="w")
+        if self.steam_enabled:
+            self.steam_switch.select()
+
+        # Add folder button
+        self.add_folder_btn = ctk.CTkButton(
+            self.sources_frame, text="+ Add Folder", height=24,
+            command=self._add_local_source, font=ctk.CTkFont(size=11))
+        self.add_folder_btn.grid(row=2, column=0, columnspan=2, padx=0, pady=2, sticky="ew")
+
+        # Local folder list
+        self.folder_list_frame = ctk.CTkFrame(self.sources_frame, fg_color="transparent")
+        self.folder_list_frame.grid(row=3, column=0, columnspan=2, padx=0, pady=0, sticky="ew")
+        self._rebuild_folder_list()
 
         # -- Action buttons (simplified) ---------------------------------
         self.button_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.button_frame.grid(row=4, column=0, padx=20, pady=3, sticky="ew")
+        self.button_frame.grid(row=5, column=0, padx=20, pady=3, sticky="ew")
         self.button_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.apply_btn = ctk.CTkButton(self.button_frame, text="Apply Wallpaper",
@@ -483,7 +516,7 @@ class TuxpaperApp(ctk.CTk):
 
         # -- All the fine-tuning controls --------------------------------
         self.controls_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
-        self.controls_frame.grid(row=5, column=0, padx=20, pady=(3, 3), sticky="nsew")
+        self.controls_frame.grid(row=6, column=0, padx=20, pady=(3, 3), sticky="nsew")
         self.controls_frame.grid_columnconfigure((0, 1), weight=1)
 
         # Scaling mode
@@ -669,6 +702,70 @@ class TuxpaperApp(ctk.CTk):
             else:
                 btn.configure(fg_color="transparent")
 
+    # ------------------------------------------------------------------
+    #  Source management
+    # ------------------------------------------------------------------
+
+    def _toggle_steam_source(self):
+        """Enable or disable Steam Workshop scanning."""
+        config = WallpaperScanner.load_config()
+        found = False
+        for s in config["sources"]:
+            if s["type"] == "steam_workshop":
+                s["enabled"] = self.steam_switch.get()
+                found = True
+                break
+        if not found:
+            config["sources"].append({
+                "type": "steam_workshop",
+                "enabled": self.steam_switch.get()
+            })
+        WallpaperScanner.save_config(config)
+        self.load_wallpapers()
+
+    def _add_local_source(self):
+        """Pick a folder and add it as a wallpaper source."""
+        folder = filedialog.askdirectory(title="Select a wallpaper folder")
+        if not folder:
+            return
+        WallpaperScanner.add_local_source(folder)
+        self._rebuild_folder_list()
+        self.load_wallpapers()
+
+    def _remove_local_source(self, path):
+        """Remove a local folder from sources."""
+        config = WallpaperScanner.load_config()
+        config["sources"] = [
+            s for s in config["sources"]
+            if not (s.get("type") == "local_folder" and s.get("path") == path)
+        ]
+        WallpaperScanner.save_config(config)
+        self._rebuild_folder_list()
+        self.load_wallpapers()
+
+    def _rebuild_folder_list(self):
+        """Recreate the local-folder entries in the sources section."""
+        for w in self.folder_list_frame.winfo_children():
+            w.destroy()
+
+        config = WallpaperScanner.load_config()
+        folders = [
+            s for s in config.get("sources", [])
+            if s.get("type") == "local_folder"
+        ]
+        for i, src in enumerate(folders):
+            path = src.get("path", "")
+            label = ctk.CTkLabel(
+                self.folder_list_frame, text=os.path.basename(path),
+                font=ctk.CTkFont(size=11), anchor="w")
+            label.grid(row=i, column=0, padx=(0, 2), pady=1, sticky="w")
+            rm_btn = ctk.CTkButton(
+                self.folder_list_frame, text="✕", width=22, height=18,
+                font=ctk.CTkFont(size=10),
+                command=lambda p=path: self._remove_local_source(p))
+            rm_btn.grid(row=i, column=1, padx=0, pady=1, sticky="e")
+            self.folder_list_frame.grid_columnconfigure(0, weight=1)
+
     def _get_target_monitors(self):
         """Return the list of monitor names to send IPC/apply to."""
         if self.monitor_mode == "all":
@@ -692,7 +789,12 @@ class TuxpaperApp(ctk.CTk):
 
         self.wallpapers = WallpaperScanner.scan_wallpapers()
         if not self.wallpapers:
-            self.status_bar.configure(text="No wallpapers found")
+            sources = WallpaperScanner.load_config().get("sources", [])
+            if not sources or not any(s.get("enabled") for s in sources):
+                self.status_bar.configure(
+                    text="No sources enabled — toggle Steam Workshop or add a folder in the sidebar")
+            else:
+                self.status_bar.configure(text="No wallpapers found")
             return
 
         columns = 4
