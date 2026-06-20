@@ -61,6 +61,28 @@ Or find **Tuxpaper Engine** in your app menu.
 
 ---
 
+### 🎨 Scene & Web Wallpapers
+
+Tuxpaper can render scene (3D) and web wallpapers from Wallpaper Engine via
+[`linux-wallpaperengine`](https://github.com/Almamu/linux-wallpaperengine).
+
+**Build it:**
+
+```bash
+git clone --recurse-submodules https://github.com/Almamu/linux-wallpaperengine.git
+cd linux-wallpaperengine
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j$(nproc)
+sudo make install
+sudo ln -sf /opt/linux-wallpaperengine/linux-wallpaperengine /usr/local/bin/
+```
+
+Video wallpapers (mpvpaper) work fine without it — scene/web wallpapers simply
+show as not available until you install the renderer.
+
+---
+
 ## 🖥️ Compatibility
 
 | Distro | Status |
@@ -74,7 +96,9 @@ Or find **Tuxpaper Engine** in your app menu.
 | Kali Linux | ✅ Supported |
 | Arch / Fedora / openSUSE / others | ❌ Not yet — install.sh uses `apt` only |
 
-**Display server:** Wayland only. mpvpaper (the wallpaper renderer) requires the wlroots layer-shell protocol. X11 is not supported.
+**Display server:** Wayland only. Both mpvpaper (video) and linux-wallpaperengine (scene/web) require the wlroots layer-shell protocol.
+
+**Scene/web wallpaper renderer:** [linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine) must be built from source. See [instructions below](#scene-web-wallpapers).
 
 ---
 
@@ -82,7 +106,7 @@ Or find **Tuxpaper Engine** in your app menu.
 
 | Category | What it does |
 |----------|-------------|
-| **Formats** | `.mp4` and `.webm` — from Steam Workshop or local folders |
+| **Formats** | Video (`.mp4`, `.webm`), scene (`.pkg`), and web wallpapers — from Steam Workshop or local folders |
 | **Browse** | Scan Steam Workshop & local folders; thumbnail grid with scroll |
 | **Search** | Filter grid by name on Enter/🔍; ✕ clears; works alongside NSFW filter |
 | **NSFW Filter** | Toggle to hide adult wallpapers by tags, content rating (Mature/Questionable), or filename |
@@ -98,6 +122,8 @@ Or find **Tuxpaper Engine** in your app menu.
 | **Pause/Play** | Freeze or resume any wallpaper |
 | **Multi-Monitor** | All monitors as one canvas, or individual wallpapers per screen — mode persists across reboots |
 | **Mode States** | Each monitor mode ("All" / "Per Monitor") saves its own wallpaper layout independently |
+| **Scene/Web** | Scene & web wallpapers rendered via [`linux-wallpaperengine`](https://github.com/Almamu/linux-wallpaperengine) — 3D scenes, interactive wallpapers, full CEF-based web wallpapers |
+| **PKG Extract** | `.pkg` archives parsed & extracted to cache automatically for local folder wallpapers |
 | **Persistence** | Every setting saved per wallpaper per monitor — restored on re-select and on boot |
 | **Reset** | Wipe all saved settings for the current wallpaper back to defaults |
 | **Autostart** | Boot-time headless restore reapplies last layout with per-monitor wallpapers |
@@ -163,7 +189,9 @@ whenever you re-select a wallpaper.
 ```
 ~/.local/share/Tuxpaper/
 ├── tuxpaper.py          # Main application
-├── launcher.sh          # Launches mpvpaper per monitor
+├── launcher.sh          # Launches mpvpaper per monitor (video wallpapers)
+├── launcher_scene.sh    # Launches linux-wallpaperengine per monitor (scene/web wallpapers)
+├── pkg_extractor.py     # .pkg archive parser & extractor
 ├── run.sh               # User-friendly runner (venv setup + launch)
 ├── install.sh           # One-liner installer (deps → mpvpaper → clone → venv → shortcut)
 ├── install_shortcut.py  # Desktop entry installer

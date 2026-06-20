@@ -49,7 +49,10 @@ install_deps() {
     info "Installing system dependencies..."
     sudo apt update
     sudo apt install -y git python3 python3-pip python3-venv \
-                        socat meson ninja-build libmpv-dev pkg-config
+                        socat meson ninja-build libmpv-dev pkg-config \
+                        cmake libxrandr-dev libgl-dev libglew-dev \
+                        libsdl2-dev libglfw3-dev libpulse-dev \
+                        libfftw3-dev libglm-dev
     ok "System dependencies installed"
 }
 
@@ -70,6 +73,29 @@ build_mpvpaper() {
     cd /tmp
     rm -rf "$TMPDIR"
     ok "mpvpaper built and installed"
+}
+
+# -- Optional: build linux-wallpaperengine (scene/web) --------------------
+build_linux_wallpaperengine() {
+    if command -v linux-wallpaperengine &>/dev/null; then
+        ok "linux-wallpaperengine already installed"
+        return
+    fi
+    echo ""
+    read -rp "Build linux-wallpaperengine for scene & web wallpaper support? (requires 8-16 GB RAM, ~30 min) [y/N] " ans
+    [[ "$ans" =~ ^[yY] ]] || { warn "Skipped — scene/web wallpapers won't be available"; return; }
+    info "Building linux-wallpaperengine (this will take a while)..."
+    TMPDIR=$(mktemp -d)
+    git clone --recurse-submodules https://github.com/Almamu/linux-wallpaperengine "$TMPDIR/linux-wallpaperengine"
+    cd "$TMPDIR/linux-wallpaperengine"
+    mkdir build && cd build
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    make -j"$(nproc)"
+    sudo make install
+    sudo ln -sf /opt/linux-wallpaperengine/linux-wallpaperengine /usr/local/bin/
+    cd /tmp
+    rm -rf "$TMPDIR"
+    ok "linux-wallpaperengine built and installed"
 }
 
 # -- Clone or update the repo --------------------------------------------
@@ -97,10 +123,9 @@ setup_venv() {
 
 # -- Make scripts executable ---------------------------------------------
 make_executable() {
-    chmod +x "$INSTALL_DIR/run.sh" "$INSTALL_DIR/launcher.sh"
-    if [ -f "$INSTALL_DIR/install.sh" ]; then
-        chmod +x "$INSTALL_DIR/install.sh"
-    fi
+    chmod +x "$INSTALL_DIR/run.sh" "$INSTALL_DIR/launcher.sh" "$INSTALL_DIR/launcher_scene.sh"
+    chmod +x "$INSTALL_DIR/install.sh" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/pkg_extractor.py" 2>/dev/null || true
     ok "Scripts made executable"
 }
 
@@ -168,6 +193,7 @@ main() {
 
     install_deps
     build_mpvpaper
+    build_linux_wallpaperengine
     setup_venv
     make_executable
     install_shortcut

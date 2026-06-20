@@ -11,6 +11,7 @@ import os, json, subprocess, re, glob, math, sys, time, tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image
+import pkg_extractor
 
 
 def truncate_text(text, max_length=40):
@@ -38,13 +39,14 @@ def pick_folder():
 class Wallpaper:
     """A single wallpaper — knows its title, where the video lives, and where its preview image lives."""
 
-    def __init__(self, title, file_path, preview_path, folder_path, tags=None, content_rating="Everyone"):
+    def __init__(self, title, file_path, preview_path, folder_path, tags=None, content_rating="Everyone", wallpaper_type="video"):
         self.title = title
         self.file_path = file_path
         self.preview_path = preview_path
         self.folder_path = folder_path
         self.tags = [t.lower() for t in (tags or [])]
         self.content_rating = content_rating
+        self.wallpaper_type = wallpaper_type  # "video", "scene", or "web"
 
 
 class WallpaperScanner:
@@ -56,7 +58,7 @@ class WallpaperScanner:
         os.path.expanduser("~/.local/share/Steam/steamapps/workshop/content/431960"),
         os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/workshop/content/431960"),
     ]
-    VALID_EXTENSIONS = {'.mp4', '.webm'}
+    VALID_EXTENSIONS = {'.mp4', '.webm', '.pkg'}
     NSFW_TAGS = {
         'nsfw', '18+', 'r18', '18禁', 'explicit',
         'adult only', 'adult content', 'adult only 18+',
@@ -257,24 +259,26 @@ class WallpaperScanner:
             try:
                 with open(project_json, encoding='utf-8') as f:
                     data = json.load(f)
-                if data.get('type', '').lower() in ('scene', 'web'):
-                    continue
                 title = data.get('title', f'Untitled ({folder_name})')
                 file_name = data.get('file', '')
+                wtype = data.get('type', '').lower()
+
+                if wtype in ('scene', 'web'):
+                    preview = cls._find_preview_in_folder(folder)
+                    wallpapers.append(Wallpaper(title, folder, preview, folder,
+                                                 tags=data.get('tags'),
+                                                 content_rating=data.get('contentrating', 'Everyone'),
+                                                 wallpaper_type=wtype))
+                    continue
                 if not file_name:
                     continue
                 ext = os.path.splitext(file_name)[1].lower()
-                if ext not in cls.VALID_EXTENSIONS:
+                if ext not in cls.VALID_EXTENSIONS or ext == '.pkg':
                     continue
                 file_path = os.path.join(folder, file_name)
                 if not os.path.exists(file_path):
                     continue
-                preview = None
-                for e in ('preview.jpg', 'preview.png', 'preview.gif', 'preview.jpeg'):
-                    p = os.path.join(folder, e)
-                    if os.path.exists(p):
-                        preview = p
-                        break
+                preview = cls._find_preview_in_folder(folder)
                 wallpapers.append(Wallpaper(title, file_path, preview, folder,
                                              tags=data.get('tags'),
                                              content_rating=data.get('contentrating', 'Everyone')))
@@ -296,23 +300,56 @@ class WallpaperScanner:
                 if ext not in cls.VALID_EXTENSIONS:
                     continue
                 base = os.path.splitext(file_name)[0]
-                title = base.replace('_', ' ').replace('-', ' ').title()
-                preview = None
-                for e in ('.jpg', '.png', '.gif', '.jpeg'):
-                    p = os.path.join(folder_path, base + e)
-                    if os.path.exists(p):
-                        preview = p
-                        break
-                if not preview:
-                    for e in ('preview.jpg', 'preview.png', 'preview.gif', 'preview.jpeg'):
-                        p = os.path.join(folder_path, e)
+
+                if ext == '.pkg':
+                    extract_dir = pkg_extractor.extract_to_cache(file_path)
+                    if extract_dir is None:
+                        continue
+                    extracted_video = pkg_extractor.find_video_in_extracted(extract_dir)
+                    if extracted_video is None:
+                        continue
+                    info = pkg_extractor.get_project_info(extract_dir)
+                    title = info.get('title', base.replace('_', ' ').replace('-', ' ').title()) if info else base.replace('_', ' ').replace('-', ' ').title()
+                    preview = (pkg_extractor.find_preview_in_extracted(extract_dir)
+                               or cls._find_preview_in_folder(folder_path))
+                    wallpapers.append(Wallpaper(title, extracted_video, preview, folder_path,
+                                                 tags=info.get('tags') if info else None,
+                                                 content_rating=info.get('contentrating', 'Everyone') if info else 'Everyone'))
+                else:
+                    title = base.replace('_', ' ').replace('-', ' ').title()
+                    preview = None
+                    for e in ('.jpg', '.png', '.gif', '.jpeg'):
+                        p = os.path.join(folder_path, base + e)
                         if os.path.exists(p):
                             preview = p
                             break
-                wallpapers.append(Wallpaper(title, file_path, preview, folder_path))
+                    if not preview:
+                        preview = cls._find_preview_in_folder(folder_path)
+                    wallpapers.append(Wallpaper(title, file_path, preview, folder_path))
         except (PermissionError, OSError):
             pass
         return wallpapers
+
+    @classmethod
+    def is_wallpaper_engine_installed(cls):
+        try:
+            r = subprocess.run(["which", "linux-wallpaperengine"],
+                               capture_output=True, text=True, timeout=5)
+            return r.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    @classmethod
+    def is_scene_supported(cls):
+        return cls.is_wallpaper_engine_installed()
+
+    @classmethod
+    def _find_preview_in_folder(cls, folder):
+        for e in ('preview.jpg', 'preview.png', 'preview.gif', 'preview.jpeg'):
+            p = os.path.join(folder, e)
+            if os.path.exists(p):
+                return p
+        return None
 
     @classmethod
     def scan_wallpapers(cls):
@@ -336,8 +373,9 @@ class WallpaperManager:
 
     @staticmethod
     def kill_all():
-        """Nuke every mpvpaper process — useful when switching monitor modes."""
+        """Nuke every mpvpaper and linux-wallpaperengine process."""
         subprocess.run(["pkill", "-f", "mpvpaper"], capture_output=True)
+        subprocess.run(["pkill", "-f", "linux-wallpaperengine"], capture_output=True)
         time.sleep(0.3)
 
     @staticmethod
@@ -352,6 +390,31 @@ class WallpaperManager:
         except Exception as e:
             print(f"Something went wrong launching the script: {e}")
             return False
+
+    @staticmethod
+    def apply_scene_wallpaper(folder_path, audio_enabled=False, scaling_mode="fit", monitor="all", volume=100):
+        try:
+            launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launcher_scene.sh")
+            if not os.path.exists(launcher):
+                messagebox.showerror("Error", f"Couldn't find the scene launcher:\n{launcher}")
+                return False
+            subprocess.Popen([launcher, folder_path, monitor,
+                              scaling_mode, "1" if audio_enabled else "0", str(volume)])
+            return True
+        except Exception as e:
+            print(f"Something went wrong launching scene wallpaper: {e}")
+            return False
+
+    @staticmethod
+    def apply(wp, audio_enabled=False, scaling_mode="fit", monitor="all", volume=100):
+        """Route to the right launcher based on wallpaper type."""
+        if wp.wallpaper_type in ("scene", "web"):
+            if not WallpaperScanner.is_wallpaper_engine_installed():
+                return False
+            return WallpaperManager.apply_scene_wallpaper(
+                wp.file_path, audio_enabled, scaling_mode, monitor, volume)
+        return WallpaperManager.apply_wallpaper(
+            wp.file_path, audio_enabled, scaling_mode, monitor)
 
 
 class TuxpaperApp(ctk.CTk):
@@ -730,6 +793,11 @@ class TuxpaperApp(ctk.CTk):
         self.status_bar = ctk.CTkLabel(self, text="Ready", anchor="w")
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
 
+        we_status = "✓ 3D" if WallpaperScanner.is_wallpaper_engine_installed() else "✗ 3D"
+        self.scene_status = ctk.CTkLabel(self, text=we_status, anchor="e",
+                                          font=("", 10), text_color="#4a4" if "✓" in we_status else "#a44")
+        self.scene_status.grid(row=1, column=1, sticky="e", padx=(0, 10), pady=5)
+
     # ------------------------------------------------------------------
     #  Monitor selection helpers
     # ------------------------------------------------------------------
@@ -955,6 +1023,11 @@ class TuxpaperApp(ctk.CTk):
                                 height=(thumb_size + 25) if thumb else 30,
                                 command=lambda w=wp: self.select_wallpaper(w))
             btn.pack()
+            if wp.wallpaper_type in ("scene", "web") and thumb:
+                badge = ctk.CTkLabel(btn, text="3D", font=("", 8),
+                                     fg_color="#2d5a27", text_color="white",
+                                     corner_radius=3, width=20, height=14)
+                badge.place(x=thumb_size - 24, y=2)
 
         total = len(self.wallpapers)
         shown = len(filtered)
@@ -1043,19 +1116,38 @@ class TuxpaperApp(ctk.CTk):
         self._reset_ui_widgets()
         self._enable_controls()
 
+        is_scene = wp.wallpaper_type in ("scene", "web")
+
+        if is_scene and not WallpaperScanner.is_wallpaper_engine_installed():
+            self.status_bar.configure(text="Scene wallpapers need linux-wallpaperengine — install it first")
+            messagebox.showinfo(
+                "Wallpaper Engine Required",
+                "This wallpaper needs linux-wallpaperengine.\n\n"
+                "Build from source:\n"
+                "  sudo apt install build-essential cmake libxrandr-dev libxinerama-dev\n"
+                "    libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev\n"
+                "    libsdl2-dev liblz4-dev libglm-dev libglfw3-dev libmpv-dev mpv\n"
+                "  git clone --recurse-submodules https://github.com/Almamu/linux-wallpaperengine\n"
+                "  cd linux-wallpaperengine && mkdir build && cd build\n"
+                "  cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)\n"
+                "  sudo cp output/bin/linux-wallpaperengine /usr/local/bin/\n\n"
+                "You also need Wallpaper Engine installed via Steam/Proton for base assets."
+            )
+            return
+
         # In per-monitor mode: only the selected monitor gets the wallpaper
         targets = self._get_target_monitors()
         for monitor in targets:
             try:
-                if WallpaperManager.apply_wallpaper(wp.file_path, self.audio_enabled,
-                                                    self.scaling_mode, monitor):
+                if WallpaperManager.apply(wp, self.audio_enabled, self.scaling_mode, monitor, self.volume_level):
                     self.status_bar.configure(text=f"Applied to {monitor}: {wp.title}")
                     self._save_wallpaper_info(monitor)
-                    cb1 = self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
-                    self._pending_callbacks.append(cb1)
-                    cb2 = self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
-                        wp.file_path, restore_pause=True, monitor=m))
-                    self._pending_callbacks.append(cb2)
+                    if not is_scene:
+                        cb1 = self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
+                        self._pending_callbacks.append(cb1)
+                        cb2 = self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
+                            wp.file_path, restore_pause=True, monitor=m))
+                        self._pending_callbacks.append(cb2)
                 else:
                     self.status_bar.configure(text=f"Failed to apply to {monitor}: {wp.title}")
             except Exception as e:
@@ -1070,27 +1162,33 @@ class TuxpaperApp(ctk.CTk):
         if not self.current_wallpaper:
             return
         scaling_mode = self.scaling_mode
-        # Apply to the selected monitor(s) only
         targets = self._get_target_monitors()
+
+        is_scene = self.current_wallpaper.wallpaper_type in ("scene", "web")
+
+        if is_scene and not WallpaperScanner.is_wallpaper_engine_installed():
+            messagebox.showinfo("Wallpaper Engine Required",
+                                "This wallpaper needs linux-wallpaperengine")
+            return
 
         self._reset_state()
         self._reset_ui_widgets()
         self._enable_controls()
         self._update_scaling_button_states(scaling_mode)
 
+        wp = self.current_wallpaper
         for monitor in targets:
-            if WallpaperManager.apply_wallpaper(self.current_wallpaper.file_path,
-                                                self.audio_enabled, scaling_mode, monitor):
+            if WallpaperManager.apply(wp, self.audio_enabled, scaling_mode, monitor, self.volume_level):
                 self._save_wallpaper_info(monitor)
 
-        # Restore per-monitor settings after all instances are running
-        for monitor in targets:
-            self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
-            self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
-                self.current_wallpaper.file_path, restore_pause=False, monitor=m))
+        if not is_scene:
+            for monitor in targets:
+                self.after(500, lambda m=monitor: self._send_scaling_ipc("stretch", m))
+                self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
+                    wp.file_path, restore_pause=False, monitor=m))
 
         self._save_current_wallpaper_settings()
-        self.status_bar.configure(text=f"Applied: {self.current_wallpaper.title}")
+        self.status_bar.configure(text=f"Applied: {wp.title}")
 
     def _reset_state(self):
         """Put all the knobs back to square one."""
@@ -1143,6 +1241,7 @@ class TuxpaperApp(ctk.CTk):
             "audio_enabled": self.audio_enabled,
             "title": self.current_wallpaper.title,
             "monitor": monitor,
+            "wallpaper_type": getattr(self.current_wallpaper, 'wallpaper_type', 'video'),
         }
 
     def _save_wallpaper_info(self, monitor="all"):
@@ -1180,11 +1279,22 @@ class TuxpaperApp(ctk.CTk):
                 continue
             scaling = info.get("scaling_mode", "stretch")
             audio = info.get("audio_enabled", False)
-            if WallpaperManager.apply_wallpaper(file_path, audio, scaling, monitor):
-                any_applied = True
+            wtype = info.get("wallpaper_type", "video")
+            temp_wp = self._create_temp_wallpaper_object(file_path, info)
+
+            if wtype in ("scene", "web"):
+                if not WallpaperScanner.is_wallpaper_engine_installed():
+                    continue
+                if WallpaperManager.apply_scene_wallpaper(file_path, audio, scaling, monitor, 100):
+                    any_applied = True
+            else:
+                if WallpaperManager.apply_wallpaper(file_path, audio, scaling, monitor):
+                    any_applied = True
+
+            if any_applied:
                 self.scaling_mode = scaling
                 self.audio_enabled = audio
-                self.current_wallpaper = self._create_temp_wallpaper_object(file_path, info)
+                self.current_wallpaper = temp_wp
                 self._update_scaling_button_states(scaling)
                 self._enable_controls()
                 if hasattr(self, 'status_bar'):
@@ -1192,9 +1302,10 @@ class TuxpaperApp(ctk.CTk):
                         text=f"Restored on {monitor}: {info.get('title', 'Wallpaper')}")
                 if hasattr(self, 'title_label') and self.current_wallpaper:
                     self.title_label.configure(text=self.current_wallpaper.title)
-                self.after(500, lambda x=monitor: self._send_scaling_ipc("stretch", x))
-                self.after(1000, lambda x=monitor: self._restore_wallpaper_settings(
-                    file_path, restore_pause=False, monitor=x))
+                if wtype not in ("scene", "web"):
+                    self.after(500, lambda x=monitor: self._send_scaling_ipc("stretch", x))
+                    self.after(1000, lambda x=monitor: self._restore_wallpaper_settings(
+                        file_path, restore_pause=False, monitor=x))
         if any_applied:
             if hasattr(self, 'pause_btn'):
                 self._reset_ui_widgets()
@@ -1678,12 +1789,15 @@ X-GNOME-Autostart-enabled=true
         """Build a minimal Wallpaper stand-in for when we're restoring state on boot."""
         try:
             class TempWallpaper:
-                def __init__(self, path, title):
+                def __init__(self, path, title, wtype):
                     self.file_path = path
                     self.title = title
                     self.preview_path = None
-                    self.folder_path = os.path.dirname(path)
-            return TempWallpaper(file_path, info.get("title", os.path.basename(file_path)))
+                    self.folder_path = path if wtype in ("scene", "web") else os.path.dirname(path)
+                    self.wallpaper_type = wtype
+            return TempWallpaper(file_path,
+                                 info.get("title", os.path.basename(file_path)),
+                                 info.get("wallpaper_type", "video"))
         except Exception as e:
             print(f"Failed to create temp wallpaper: {e}")
             return None
