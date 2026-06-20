@@ -7,7 +7,7 @@ your own folders) with per-wallpaper settings, per-monitor support, autostart,
 and headless boot. All the heavy lifting is done by mpvpaper under the hood.
 """
 
-import os, json, subprocess, re, glob, math, sys, time
+import os, json, subprocess, re, glob, math, sys, time, tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image
@@ -449,20 +449,41 @@ class TuxpaperApp(ctk.CTk):
         self.search_frame.grid_columnconfigure(0, weight=1)
 
         self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Search wallpapers...",
-                                         font=ctk.CTkFont(size=12))
+                                         font=ctk.CTkFont(size=11), height=22)
         self.search_entry.grid(row=0, column=0, padx=(0, 5), sticky="ew")
         self.search_entry.bind('<Return>', self._apply_search)
 
-        self.search_btn = ctk.CTkButton(self.search_frame, text="🔍", width=32, height=26,
-                                        command=self._apply_search, font=ctk.CTkFont(size=13))
-        self.search_btn.grid(row=0, column=1, padx=(0, 3))
+        self.search_btn = ctk.CTkButton(self.search_frame, text="🔍", width=28, height=22,
+                                        command=self._apply_search, font=ctk.CTkFont(size=11))
+        self.search_btn.grid(row=0, column=1, padx=(0, 2))
 
-        self.clear_search_btn = ctk.CTkButton(self.search_frame, text="✕", width=32, height=26,
-                                              command=self._clear_search, font=ctk.CTkFont(size=13))
+        self.clear_search_btn = ctk.CTkButton(self.search_frame, text="✕", width=28, height=22,
+                                              command=self._clear_search, font=ctk.CTkFont(size=11))
         self.clear_search_btn.grid(row=0, column=2)
 
-        self.wallpaper_grid = ctk.CTkScrollableFrame(self.main_panel)
-        self.wallpaper_grid.grid(row=1, column=0, padx=15, pady=15, sticky="nsew")
+        self.wallpaper_canvas = tk.Canvas(self.main_panel, highlightthickness=0,
+                                          bg="#2b2b2b")
+        self.wallpaper_canvas.grid(row=1, column=0, sticky="nsew")
+
+        self.wallpaper_vsb = ctk.CTkScrollbar(self.main_panel, orientation="vertical",
+                                              command=self.wallpaper_canvas.yview)
+        self.wallpaper_vsb.grid(row=1, column=1, sticky="ns")
+
+        self.wallpaper_hsb = ctk.CTkScrollbar(self.main_panel, orientation="horizontal",
+                                              command=self.wallpaper_canvas.xview)
+        self.wallpaper_hsb.grid(row=2, column=0, sticky="ew")
+
+        self.wallpaper_canvas.configure(yscrollcommand=self.wallpaper_vsb.set,
+                                         xscrollcommand=self.wallpaper_hsb.set)
+
+        self.wallpaper_grid = ctk.CTkFrame(self.wallpaper_canvas, fg_color="transparent")
+        self.wallpaper_canvas_win = self.wallpaper_canvas.create_window(
+            (0, 0), window=self.wallpaper_grid, anchor="nw")
+
+        def _update_scrollregion(event=None):
+            self.wallpaper_canvas.configure(scrollregion=self.wallpaper_canvas.bbox("all"))
+
+        self.wallpaper_grid.bind("<Configure>", _update_scrollregion)
 
         # -- Sidebar on the left (preview + controls) --------------------
         self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
@@ -714,7 +735,7 @@ class TuxpaperApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def _on_monitor_mode_change(self, value):
-        """Switch between All and Per Monitor mode."""
+        """Switch between All and Per Monitor mode — restores that mode's last wallpaper state."""
         new_mode = "all" if value == "All" else "individual"
         if new_mode == self.monitor_mode:
             return
@@ -728,16 +749,17 @@ class TuxpaperApp(ctk.CTk):
             self.monitor_btn_frame.grid()
             self.selected_monitors = [self.monitors[0]]
 
+        old_mode = self.monitor_mode
         self.monitor_mode = new_mode
         self.monitor_btn_frame.grid_remove() if new_mode == "all" else self.monitor_btn_frame.grid()
         self._update_monitor_button_states()
         self.settings["monitor_mode"] = new_mode
         WallpaperScanner.save_settings(self.settings)
 
-        if self.current_wallpaper:
-            self.status_bar.configure(text=f"Switched to {value} mode — reapplying...")
-            WallpaperManager.kill_all()
-            self.apply_current_wallpaper()
+        WallpaperManager.kill_all()
+        self.current_wallpaper = None
+        self._reset_ui_widgets()
+        self._restore_mode_state(new_mode)
 
     def _select_monitor(self, monitor):
         """Select a single target monitor in per-monitor mode."""
@@ -867,16 +889,13 @@ class TuxpaperApp(ctk.CTk):
         self._rebuild_grid()
 
     def _rebuild_grid(self, query=None):
-        """Rebuild the wallpaper grid — filters, calculates layout, then builds in batches."""
-        self._rebuild_cancelled = True
+        """Rebuild the wallpaper grid — filters, then builds all thumbnails at once."""
         for cb in self._pending_callbacks:
             self.after_cancel(cb)
         self._pending_callbacks.clear()
 
         for w in self.wallpaper_grid.winfo_children():
             w.destroy()
-
-        self._rebuild_cancelled = False
 
         filtered = list(self.wallpapers)
 
@@ -903,43 +922,19 @@ class TuxpaperApp(ctk.CTk):
             self.status_bar.configure(text="No wallpapers match your filters")
             return
 
-        # Calculate dynamic columns and thumbnail size
-        try:
-            grid_width = self.wallpaper_grid.winfo_width()
-        except Exception:
-            grid_width = 600
-        columns = max(3, min(8, grid_width // 130))
-        col_width = (grid_width - (columns - 1) * 8) // columns
-        thumb_size = max(60, min(col_width - 30, 200))
+        columns = 20
+        thumb_size = 90
+        col_w = thumb_size + 12
         for col in range(columns):
-            self.wallpaper_grid.grid_columnconfigure(col, weight=1, uniform="wp_col")
+            self.wallpaper_grid.grid_columnconfigure(col, minsize=col_w, weight=0)
 
-        self._rebuild_filtered = filtered
-        self._rebuild_columns = columns
-        self._rebuild_thumb_size = thumb_size
-        self._rebuild_index = 0
-        self._rebuild_total = len(filtered)
-
-        # Start batched building
-        cb = self.after(1, self._rebuild_batch)
-        self._pending_callbacks.append(cb)
-
-    def _rebuild_batch(self):
-        """Build wallpaper widgets in small batches so the UI stays responsive."""
-        if self._rebuild_cancelled:
-            return
-
-        BATCH = 20
-        filtered = self._rebuild_filtered
-        columns = self._rebuild_columns
-        thumb_size = self._rebuild_thumb_size
-        start = self._rebuild_index
-
-        for i in range(start, min(start + BATCH, len(filtered))):
-            wp = filtered[i]
+        for i, wp in enumerate(filtered):
             row, col = divmod(i, columns)
-            item = ctk.CTkFrame(self.wallpaper_grid, fg_color="transparent")
-            item.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+            item_width = thumb_size + 8
+            item_height = (thumb_size + 33) if os.path.exists(wp.preview_path or '') else 38
+            item = ctk.CTkFrame(self.wallpaper_grid, fg_color="transparent",
+                                width=item_width, height=item_height)
+            item.grid(row=row, column=col, padx=2, pady=2, sticky="n")
             item.grid_propagate(False)
 
             thumb = None
@@ -954,41 +949,27 @@ class TuxpaperApp(ctk.CTk):
                 except Exception:
                     pass
 
-            name = truncate_text(wp.title, max_length=max(10, thumb_size // 5))
+            name = truncate_text(wp.title, max_length=8)
             btn = ctk.CTkButton(item, text=name, image=thumb, compound="top",
                                 anchor="center", width=thumb_size,
                                 height=(thumb_size + 25) if thumb else 30,
                                 command=lambda w=wp: self.select_wallpaper(w))
-            btn.pack(fill="both", expand=True)
+            btn.pack()
 
-        self._rebuild_index = start + BATCH
-
-        if self._rebuild_index < len(filtered):
-            self.status_bar.configure(text=f"Loading wallpapers... ({self._rebuild_index}/{len(filtered)})")
-            cb = self.after(1, self._rebuild_batch)
-            self._pending_callbacks.append(cb)
+        total = len(self.wallpapers)
+        shown = len(filtered)
+        if shown < total:
+            self.status_bar.configure(text=f"Showing {shown} of {total} wallpapers")
         else:
-            total = len(self.wallpapers)
-            shown = len(filtered)
-            if shown < total:
-                self.status_bar.configure(text=f"Showing {shown} of {total} wallpapers")
-            else:
-                self.status_bar.configure(text=f"Found {total} wallpapers")
-            self._bind_mousewheel()
-            self._update_controls_scrollbar()
+            self.status_bar.configure(text=f"Found {total} wallpapers")
+        self._bind_mousewheel()
+        self._update_controls_scrollbar()
+        self._update_wallpaper_scrollbars()
 
     def _on_window_resize(self, event):
-        if event.widget == self and hasattr(self, 'wallpaper_grid'):
-            if hasattr(self, '_resize_timer'):
-                self.after_cancel(self._resize_timer)
-            self._resize_timer = self.after(300, self._do_debounced_rebuild)
-        self._update_controls_scrollbar()
-
-    def _do_debounced_rebuild(self):
-        self._rebuild_cancelled = True
-        query = self.search_entry.get() if hasattr(self, 'search_entry') else None
-        self._rebuild_grid(query)
-        self._update_controls_scrollbar()
+        if event.widget == self:
+            self._update_controls_scrollbar()
+            self._update_wallpaper_scrollbars()
 
     def _update_controls_scrollbar(self):
         """Hide the controls scrollbar when content fits the visible area."""
@@ -1003,25 +984,46 @@ class TuxpaperApp(ctk.CTk):
         except Exception:
             pass
 
+    def _update_wallpaper_scrollbars(self):
+        """Hide wallpaper scrollbars when content fits the viewport."""
+        try:
+            self.wallpaper_canvas.update_idletasks()
+            bbox = self.wallpaper_canvas.bbox("all")
+            if not bbox:
+                return
+            cw = self.wallpaper_canvas.winfo_width()
+            ch = self.wallpaper_canvas.winfo_height()
+            if bbox[2] <= cw:
+                self.wallpaper_hsb.grid_remove()
+            else:
+                self.wallpaper_hsb.grid()
+            if bbox[3] <= ch:
+                self.wallpaper_vsb.grid_remove()
+            else:
+                self.wallpaper_vsb.grid()
+        except Exception:
+            pass
+
     def _bind_mousewheel(self):
         try:
-            inner = self.wallpaper_grid._scroll_frame
-            inner.bind('<Button-4>', self._scroll_up, add='+')
-            inner.bind('<Button-5>', self._scroll_down, add='+')
-            for child in inner.winfo_children():
-                child.bind('<Button-4>', self._scroll_up, add='+')
-                child.bind('<Button-5>', self._scroll_down, add='+')
-                for sub in child.winfo_children():
-                    sub.bind('<Button-4>', self._scroll_up, add='+')
-                    sub.bind('<Button-5>', self._scroll_down, add='+')
+            self.wallpaper_canvas.bind('<Button-4>', self._scroll_up, add='+')
+            self.wallpaper_canvas.bind('<Button-5>', self._scroll_down, add='+')
+            self.wallpaper_canvas.bind('<Shift-Button-4>', self._scroll_left, add='+')
+            self.wallpaper_canvas.bind('<Shift-Button-5>', self._scroll_right, add='+')
         except Exception:
             pass
 
     def _scroll_up(self, event):
-        self.wallpaper_grid._parent_canvas.yview_scroll(-3, "units")
+        self.wallpaper_canvas.yview_scroll(-3, "units")
 
     def _scroll_down(self, event):
-        self.wallpaper_grid._parent_canvas.yview_scroll(3, "units")
+        self.wallpaper_canvas.yview_scroll(3, "units")
+
+    def _scroll_left(self, event):
+        self.wallpaper_canvas.xview_scroll(-3, "units")
+
+    def _scroll_right(self, event):
+        self.wallpaper_canvas.xview_scroll(3, "units")
 
     # ------------------------------------------------------------------
     #  Selecting and applying wallpapers
@@ -1148,18 +1150,54 @@ class TuxpaperApp(ctk.CTk):
         if self.settings.get("restore_last_wallpaper", True):
             info = self._build_wallpaper_info(monitor)
             existing = WallpaperScanner.load_last_wallpaper()
-            if isinstance(existing, dict) and "monitors" in existing:
-                monitors_dict = existing.get("monitors", {})
-            else:
-                monitors_dict = {}
-            monitors_dict[monitor] = info
-            WallpaperScanner.save_last_wallpaper({
-                "mode": self.monitor_mode,
-                "monitors": monitors_dict,
-            })
+            if not isinstance(existing, dict):
+                existing = {}
+            mode_state = existing.get(self.monitor_mode, {"monitors": {}})
+            if not isinstance(mode_state, dict) or "monitors" not in mode_state:
+                mode_state = {"monitors": {}}
+            mode_state["monitors"][monitor] = info
+            existing[self.monitor_mode] = mode_state
+            WallpaperScanner.save_last_wallpaper(existing)
         self.settings["default_scaling_mode"] = self.scaling_mode
         self.settings["monitor_mode"] = self.monitor_mode
         WallpaperScanner.save_settings(self.settings)
+
+    def _restore_mode_state(self, mode):
+        """Apply the saved wallpaper state for a given mode from last_wallpaper.json."""
+        last = WallpaperScanner.load_last_wallpaper()
+        if not last:
+            return
+        mode_state = last.get(mode) if isinstance(last, dict) else None
+        if mode_state is None and "monitors" in last:
+            mode_state = last
+        if not mode_state or "monitors" not in mode_state:
+            return
+        monitors_info = mode_state["monitors"]
+        any_applied = False
+        for monitor, info in monitors_info.items():
+            file_path = info.get("file_path", "")
+            if not os.path.exists(file_path):
+                continue
+            scaling = info.get("scaling_mode", "stretch")
+            audio = info.get("audio_enabled", False)
+            if WallpaperManager.apply_wallpaper(file_path, audio, scaling, monitor):
+                any_applied = True
+                self.scaling_mode = scaling
+                self.audio_enabled = audio
+                self.current_wallpaper = self._create_temp_wallpaper_object(file_path, info)
+                self._update_scaling_button_states(scaling)
+                self._enable_controls()
+                if hasattr(self, 'status_bar'):
+                    self.status_bar.configure(
+                        text=f"Restored on {monitor}: {info.get('title', 'Wallpaper')}")
+                if hasattr(self, 'title_label') and self.current_wallpaper:
+                    self.title_label.configure(text=self.current_wallpaper.title)
+                self.after(500, lambda x=monitor: self._send_scaling_ipc("stretch", x))
+                self.after(1000, lambda x=monitor: self._restore_wallpaper_settings(
+                    file_path, restore_pause=False, monitor=x))
+        if any_applied:
+            if hasattr(self, 'pause_btn'):
+                self._reset_ui_widgets()
 
     def _load_preview(self, wp):
         """Load and display the preview image for a wallpaper."""
@@ -1604,15 +1642,14 @@ X-GNOME-Autostart-enabled=true
     # ------------------------------------------------------------------
 
     def auto_apply_last_wallpaper_on_startup(self):
-        """On boot, restore each monitor to its last wallpaper."""
+        """On boot, restore each monitor to its last wallpaper for the current mode."""
         if not self.settings.get("restore_last_wallpaper", True):
             return
         last = WallpaperScanner.load_last_wallpaper()
-
         if not last:
             return
 
-        # Handle old format (single wallpaper, no monitor info)
+        # Old format: single wallpaper, no monitors dict
         if isinstance(last, dict) and "file_path" in last and "monitors" not in last:
             file_path = last.get("file_path", "")
             if os.path.exists(file_path):
@@ -1635,28 +1672,7 @@ X-GNOME-Autostart-enabled=true
                             file_path, restore_pause=False, monitor=m))
             return
 
-        # New format: per-monitor
-        monitors_info = last.get("monitors", {})
-        for monitor, info in monitors_info.items():
-            file_path = info.get("file_path", "")
-            if not os.path.exists(file_path):
-                continue
-            self._enable_controls()
-            scaling = info.get("scaling_mode", "stretch")
-            audio = info.get("audio_enabled", False)
-
-            if WallpaperManager.apply_wallpaper(file_path, audio, scaling, monitor):
-                self.scaling_mode = scaling
-                self.audio_enabled = audio
-                self.current_wallpaper = self._create_temp_wallpaper_object(file_path, info)
-                self._update_scaling_button_states(scaling)
-                self.status_bar.configure(
-                    text=f"Auto-Applied to {monitor}: {info.get('title', 'Wallpaper')}")
-                if hasattr(self, 'title_label') and self.current_wallpaper:
-                    self.title_label.configure(text=self.current_wallpaper.title)
-                self.after(500, lambda x=monitor: self._send_scaling_ipc("stretch", x))
-                self.after(1000, lambda x=monitor: self._restore_wallpaper_settings(
-                    file_path, restore_pause=False, monitor=x))
+        self._restore_mode_state(self.monitor_mode)
 
     def _create_temp_wallpaper_object(self, file_path, info):
         """Build a minimal Wallpaper stand-in for when we're restoring state on boot."""
