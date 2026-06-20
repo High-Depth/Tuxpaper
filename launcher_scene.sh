@@ -24,7 +24,10 @@ sleep 0.3
 # Build command
 CMD=("linux-wallpaperengine" "--screen-root" "$MONITOR" "--bg" "$FOLDER")
 
-# Scaling
+# Scaling (center -> fit, linux-wallpaperengine doesn't support center)
+if [ "$SCALING" = "center" ]; then
+    SCALING="fit"
+fi
 if [ "$SCALING" = "stretch" ] || [ "$SCALING" = "fill" ] || [ "$SCALING" = "fit" ]; then
     CMD+=("--scaling" "$SCALING")
 fi
@@ -38,5 +41,7 @@ fi
 if [ "$VOLUME" -lt 100 ]; then
     CMD+=("--volume" "$VOLUME")
 fi
+
+CMD+=("--disable-mouse" "--disable-parallax")
 
 nohup "${CMD[@]}" >/dev/null 2>&1 &

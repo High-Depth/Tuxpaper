@@ -1115,6 +1115,7 @@ class TuxpaperApp(ctk.CTk):
         self._reset_state()
         self._reset_ui_widgets()
         self._enable_controls()
+        self._update_controls_for_type()
 
         is_scene = wp.wallpaper_type in ("scene", "web")
 
@@ -1153,6 +1154,8 @@ class TuxpaperApp(ctk.CTk):
             except Exception as e:
                 self.status_bar.configure(text=f"Error applying to {monitor}: {e}")
 
+        self._update_controls_for_type()
+
         if hasattr(self, 'preview_label'):
             self._load_preview(wp)
         self.status_bar.configure(text=f"Selected: {wp.title}")
@@ -1187,11 +1190,15 @@ class TuxpaperApp(ctk.CTk):
                 self.after(1000, lambda m=monitor: self._restore_wallpaper_settings(
                     wp.file_path, restore_pause=False, monitor=m))
 
+        self._update_controls_for_type()
         self._save_current_wallpaper_settings()
         self.status_bar.configure(text=f"Applied: {wp.title}")
 
     def _reset_state(self):
         """Put all the knobs back to square one."""
+        if hasattr(self, '_scene_volume_timer'):
+            self.after_cancel(self._scene_volume_timer)
+            del self._scene_volume_timer
         self.audio_enabled = False
         self.scaling_mode = "stretch"
         self.flipped = False
@@ -1232,6 +1239,62 @@ class TuxpaperApp(ctk.CTk):
         for attr in ('zoom_slider', 'volume_slider', 'speed_slider'):
             if hasattr(self, attr):
                 getattr(self, attr).configure(state="normal")
+
+    def _is_scene_active(self):
+        return (self.current_wallpaper is not None and
+                self.current_wallpaper.wallpaper_type in ("scene", "web"))
+
+    def _reapply_scene_wallpaper(self):
+        if not self._is_scene_active():
+            return
+        targets = self._get_target_monitors()
+        scaling = self.scaling_mode
+        if scaling == "center":
+            scaling = "fit"
+        for monitor in targets:
+            WallpaperManager.apply_scene_wallpaper(
+                self.current_wallpaper.file_path,
+                self.audio_enabled, scaling, monitor, self.volume_level)
+
+    def _pause_scene_wallpaper(self):
+        for m in self._get_target_monitors():
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", f"linux-wallpaperengine.*--screen-root {m}"],
+                    capture_output=True, text=True, timeout=3)
+                for pid in result.stdout.strip().splitlines():
+                    if pid:
+                        subprocess.run(["kill", "-STOP", pid], capture_output=True)
+            except Exception:
+                pass
+
+    def _resume_scene_wallpaper(self):
+        for m in self._get_target_monitors():
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", f"linux-wallpaperengine.*--screen-root {m}"],
+                    capture_output=True, text=True, timeout=3)
+                for pid in result.stdout.strip().splitlines():
+                    if pid:
+                        subprocess.run(["kill", "-CONT", pid], capture_output=True)
+            except Exception:
+                pass
+
+    def _update_controls_for_type(self):
+        if not hasattr(self, 'flip_btn'):
+            return
+        is_scene = self._is_scene_active()
+        for attr in ('flip_btn', 'rotate_cw_btn', 'rotate_ccw_btn'):
+            if hasattr(self, attr):
+                getattr(self, attr).configure(state="disabled" if is_scene else "normal")
+        for attr in ('up_btn', 'down_btn', 'left_btn', 'right_btn'):
+            if hasattr(self, attr):
+                getattr(self, attr).configure(state="disabled" if is_scene else "normal")
+        for attr in ('zoom_slider', 'speed_slider'):
+            if hasattr(self, attr):
+                getattr(self, attr).configure(state="disabled" if is_scene else "normal")
+        if hasattr(self, 'center_btn'):
+            self.center_btn.configure(state="disabled" if is_scene else "normal")
 
     def _build_wallpaper_info(self, monitor="all"):
         """Package up the current wallpaper info into a dict for saving."""
@@ -1297,6 +1360,7 @@ class TuxpaperApp(ctk.CTk):
                 self.current_wallpaper = temp_wp
                 self._update_scaling_button_states(scaling)
                 self._enable_controls()
+                self._update_controls_for_type()
                 if hasattr(self, 'status_bar'):
                     self.status_bar.configure(
                         text=f"Restored on {monitor}: {info.get('title', 'Wallpaper')}")
@@ -1360,8 +1424,14 @@ class TuxpaperApp(ctk.CTk):
         try:
             self.scaling_mode = scaling_mode
             self._update_scaling_button_states(scaling_mode)
-            targets = self._get_target_monitors()
 
+            if self._is_scene_active():
+                self._reapply_scene_wallpaper()
+                self.status_bar.configure(text=f"Scaling set to {scaling_mode.capitalize()}")
+                self._save_current_wallpaper_settings()
+                return
+
+            targets = self._get_target_monitors()
             for m in targets:
                 socket = self._get_socket_path(m)
                 if not os.path.exists(socket):
@@ -1465,29 +1535,35 @@ class TuxpaperApp(ctk.CTk):
 
     def _update_wallpaper_position(self):
         """Send the current pan values to mpv and save."""
+        if self._is_scene_active():
+            return
         self._send_ipc_to_targets("video-pan-x", self.pan_x)
         self._send_ipc_to_targets("video-pan-y", self.pan_y)
         self._save_current_wallpaper_settings()
 
     def move_wallpaper_up(self):
-        if self.pan_y > -self.pan_limit:
-            self.pan_y -= self.pan_increment
-            self._update_wallpaper_position()
+        if self._is_scene_active() or self.pan_y <= -self.pan_limit:
+            return
+        self.pan_y -= self.pan_increment
+        self._update_wallpaper_position()
 
     def move_wallpaper_down(self):
-        if self.pan_y < self.pan_limit:
-            self.pan_y += self.pan_increment
-            self._update_wallpaper_position()
+        if self._is_scene_active() or self.pan_y >= self.pan_limit:
+            return
+        self.pan_y += self.pan_increment
+        self._update_wallpaper_position()
 
     def move_wallpaper_left(self):
-        if self.pan_x > -self.pan_limit:
-            self.pan_x -= self.pan_increment
-            self._update_wallpaper_position()
+        if self._is_scene_active() or self.pan_x <= -self.pan_limit:
+            return
+        self.pan_x -= self.pan_increment
+        self._update_wallpaper_position()
 
     def move_wallpaper_right(self):
-        if self.pan_x < self.pan_limit:
-            self.pan_x += self.pan_increment
-            self._update_wallpaper_position()
+        if self._is_scene_active() or self.pan_x >= self.pan_limit:
+            return
+        self.pan_x += self.pan_increment
+        self._update_wallpaper_position()
 
     # ------------------------------------------------------------------
     #  Zoom
@@ -1496,6 +1572,8 @@ class TuxpaperApp(ctk.CTk):
     def change_zoom(self, value):
         """Adjust the zoom slider. Snaps to 5% increments for sanity."""
         if not self.current_wallpaper:
+            return
+        if self._is_scene_active():
             return
         self.zoom_percent = round(float(value) / 5) * 5
         self.zoom_level = math.log2(self.zoom_percent / 100.0)
@@ -1513,6 +1591,14 @@ class TuxpaperApp(ctk.CTk):
             return
         self.volume_level = int(round(float(value)))
         self.volume_label.configure(text=f"{self.volume_level}%")
+        if self._is_scene_active():
+            self.audio_enabled = self.volume_level > 0
+            self.mute_btn.configure(text="🔇 Mute" if self.audio_enabled else "🔊 Unmute")
+            if hasattr(self, '_scene_volume_timer'):
+                self.after_cancel(self._scene_volume_timer)
+            self._scene_volume_timer = self.after(300, self._reapply_scene_wallpaper)
+            self._save_current_wallpaper_settings()
+            return
         self._send_ipc_to_targets("volume", self.volume_level)
         if self.volume_level > 0 and not self.audio_enabled:
             self.audio_enabled = True
@@ -1528,6 +1614,8 @@ class TuxpaperApp(ctk.CTk):
     def change_speed(self, value):
         """Change playback speed — anything from 0x to 4x."""
         if not self.current_wallpaper:
+            return
+        if self._is_scene_active():
             return
         self.current_speed = round(float(value), 2)
         self.speed_label.configure(text=f"{self.current_speed:.2f}x")
@@ -1554,10 +1642,17 @@ class TuxpaperApp(ctk.CTk):
             if self.is_paused:
                 self.pause_btn.configure(text="▶ Play")
                 self.status_bar.configure(text="Wallpaper paused")
+                if self._is_scene_active():
+                    self._pause_scene_wallpaper()
+                else:
+                    self._send_ipc_to_targets("pause", True)
             else:
                 self.pause_btn.configure(text="⏸ Pause")
                 self.status_bar.configure(text="Wallpaper playing")
-            self._send_ipc_to_targets("pause", self.is_paused)
+                if self._is_scene_active():
+                    self._resume_scene_wallpaper()
+                else:
+                    self._send_ipc_to_targets("pause", False)
             self._save_current_wallpaper_settings()
         except Exception as e:
             self.status_bar.configure(text=f"Error toggling pause: {e}")
@@ -1566,7 +1661,11 @@ class TuxpaperApp(ctk.CTk):
         """Un-pause the wallpaper."""
         self.is_paused = False
         self.pause_btn.configure(text="⏸ Pause")
-        if self.current_wallpaper:
+        if not self.current_wallpaper:
+            return
+        if self._is_scene_active():
+            self._resume_scene_wallpaper()
+        else:
             self._send_ipc_to_targets("pause", False)
 
     # ------------------------------------------------------------------
@@ -1574,10 +1673,23 @@ class TuxpaperApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def toggle_audio(self):
-        """Mute or unmute the wallpaper audio via mpv's 'cycle audio' command."""
+        """Mute or unmute the wallpaper audio."""
         if not self.current_wallpaper:
             return
         try:
+            self.audio_enabled = not self.audio_enabled
+            if self.audio_enabled:
+                self.mute_btn.configure(text="🔇 Mute")
+                self.status_bar.configure(text="Audio enabled")
+            else:
+                self.mute_btn.configure(text="🔊 Unmute")
+                self.status_bar.configure(text="Audio disabled")
+
+            if self._is_scene_active():
+                self._reapply_scene_wallpaper()
+                self._save_current_wallpaper_settings()
+                return
+
             any_socket = False
             for m in self._get_target_monitors():
                 socket = self._get_socket_path(m)
@@ -1591,13 +1703,6 @@ class TuxpaperApp(ctk.CTk):
             if not any_socket:
                 self.status_bar.configure(text="Error: No wallpaper running")
                 return
-            self.audio_enabled = not self.audio_enabled
-            if self.audio_enabled:
-                self.mute_btn.configure(text="🔇 Mute")
-                self.status_bar.configure(text="Audio enabled")
-            else:
-                self.mute_btn.configure(text="🔊 Unmute")
-                self.status_bar.configure(text="Audio disabled")
             self._save_current_wallpaper_settings()
         except subprocess.TimeoutExpired:
             self.status_bar.configure(text="Error: Command timeout")
@@ -1615,6 +1720,8 @@ class TuxpaperApp(ctk.CTk):
     def toggle_flip(self):
         """Mirror the wallpaper horizontally (or un-mirror it)."""
         if not self.current_wallpaper:
+            return
+        if self._is_scene_active():
             return
         try:
             self.flipped = not self.flipped
@@ -1638,6 +1745,8 @@ class TuxpaperApp(ctk.CTk):
         """Spin the wallpaper 90° clockwise."""
         if not self.current_wallpaper:
             return
+        if self._is_scene_active():
+            return
         self.rotation = (self.rotation + 90) % 360
         self._send_ipc_to_targets("video-rotate", self.rotation)
         self.status_bar.configure(text=f"Rotated {self.rotation}°")
@@ -1647,6 +1756,8 @@ class TuxpaperApp(ctk.CTk):
         """Spin the wallpaper 90° counter-clockwise."""
         if not self.current_wallpaper:
             return
+        if self._is_scene_active():
+            return
         self.rotation = (self.rotation - 90) % 360
         self._send_ipc_to_targets("video-rotate", self.rotation)
         self.status_bar.configure(text=f"Rotated {self.rotation}°")
@@ -1655,8 +1766,11 @@ class TuxpaperApp(ctk.CTk):
     def reset_rotation(self):
         """Take the wallpaper back to 0°."""
         self.rotation = 0
-        if self.current_wallpaper:
-            self._send_ipc_to_targets("video-rotate", 0)
+        if not self.current_wallpaper:
+            return
+        if self._is_scene_active():
+            return
+        self._send_ipc_to_targets("video-rotate", 0)
 
     # ------------------------------------------------------------------
     #  Reset — wipe everything back to defaults
@@ -1667,6 +1781,7 @@ class TuxpaperApp(ctk.CTk):
         if not self.current_wallpaper:
             return
 
+        is_scene = self._is_scene_active()
         targets = self._get_target_monitors()
         for m in targets:
             WallpaperScanner.clear_wallpaper_settings(self.current_wallpaper.file_path, m)
@@ -1675,19 +1790,24 @@ class TuxpaperApp(ctk.CTk):
         self._reset_ui_widgets()
 
         for m in targets:
-            socket = self._get_socket_path(m)
-            if os.path.exists(socket):
-                self._send_ipc_command("video-pan-x", 0.0, socket)
-                self._send_ipc_command("video-pan-y", 0.0, socket)
-                self._send_ipc_command("video-zoom", 0.0, socket)
-                self._send_ipc_command("volume", 100, socket)
-                self._send_ipc_command("speed", 1.0, socket)
-                self._send_ipc_command("video-rotate", 0, socket)
+            if is_scene:
+                WallpaperManager.apply_scene_wallpaper(
+                    self.current_wallpaper.file_path, self.audio_enabled, self.scaling_mode, m, self.volume_level)
+            else:
+                socket = self._get_socket_path(m)
+                if os.path.exists(socket):
+                    self._send_ipc_command("video-pan-x", 0.0, socket)
+                    self._send_ipc_command("video-pan-y", 0.0, socket)
+                    self._send_ipc_command("video-zoom", 0.0, socket)
+                    self._send_ipc_command("volume", 100, socket)
+                    self._send_ipc_command("speed", 1.0, socket)
+                    self._send_ipc_command("video-rotate", 0, socket)
 
-            WallpaperManager.apply_wallpaper(self.current_wallpaper.file_path,
-                                             self.audio_enabled, self.scaling_mode, m)
+                WallpaperManager.apply_wallpaper(self.current_wallpaper.file_path,
+                                                 self.audio_enabled, self.scaling_mode, m)
 
         self._enable_controls()
+        self._update_controls_for_type()
         self._reset_ui_widgets()
         self.status_bar.configure(text=f"Reset: {self.current_wallpaper.title}")
         self._save_current_wallpaper_settings()
@@ -1765,6 +1885,7 @@ X-GNOME-Autostart-enabled=true
             file_path = last.get("file_path", "")
             if os.path.exists(file_path):
                 self._enable_controls()
+                self._update_controls_for_type()
                 targets = self._get_target_monitors()
                 for m in targets:
                     scaling = last.get("scaling_mode", "stretch")
