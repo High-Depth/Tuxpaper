@@ -85,7 +85,7 @@ Or find **Tuxpaper Engine** in your app menu.
 | **Browse** | Scan Steam Workshop & local folders; thumbnail grid with scroll |
 | **Search** | Filter grid by name on Enter/🔍; ✕ clears; works alongside NSFW filter |
 | **NSFW Filter** | Toggle to hide adult wallpapers by tags, content rating (Mature/Questionable), or filename |
-| **Responsive Grid** | Dynamic columns + thumbnail sizes adapt to window width; batched loading (no UI freeze) |
+| **Grid** | Fixed 20-column grid with uniform thumbnails, horizontal+vertical scroll |
 | **Native File Picker** | Uses zenity (GNOME) or kdialog (KDE) for folder selection instead of tkinter |
 | **Sources** | Privacy-first — no auto-scan. Toggle Steam Workshop, add/remove local folders, all from sidebar |
 | **Scaling** | Stretch, Fit, Fill, or Center — per-wallpaper |
@@ -96,6 +96,7 @@ Or find **Tuxpaper Engine** in your app menu.
 | **Speed** | 0.00x–4.00x playback speed |
 | **Pause/Play** | Freeze or resume any wallpaper |
 | **Multi-Monitor** | All monitors as one canvas, or individual wallpapers per screen — mode persists across reboots |
+| **Mode States** | Each monitor mode ("All" / "Per Monitor") saves its own wallpaper layout independently |
 | **Persistence** | Every setting saved per wallpaper per monitor — restored on re-select and on boot |
 | **Reset** | Wipe all saved settings for the current wallpaper back to defaults |
 | **Autostart** | Boot-time headless restore reapplies last layout with per-monitor wallpapers |
