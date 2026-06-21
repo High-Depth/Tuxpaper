@@ -10,8 +10,8 @@
 
 <p align="center">
   <strong>Animated wallpapers for Linux — browse, tweak, and forget.</strong><br>
-  Per-wallpaper settings, multi-monitor support, autostart, and a friendly GUI.
-  THERE WILL BE BUGS.
+  Per-wallpaper settings, multi-monitor support, autostart, and a friendly GUI.<br>
+  <em>THERE WILL BE BUGS. Probably some we introduced while fixing the ones we found.</em>
 </p>
 
 <p align="center">
@@ -210,6 +210,68 @@ Config lives in `~/.config/tuxpaper/`:
 
 ---
 
+## 🐛 There Will Be Bugs
+
+This is a passion project, not a triple-A enterprise deployment platform. Things might go sideways. Your wallpaper might stare at you funny after an update. The config JSON might grow a third eye. If something breaks, [open an issue](https://github.com/High-Depth/Tuxpaper/issues) and we'll squish it together.
+
+Known quirks:
+- **Wayland only** — mpvpaper and linux-wallpaperengine both need wlroots. X11 works about as well as a bicycle in a swimming pool.
+- **Monitor detection** tries `xrandr` first, then `wlr-randr`. If you're running on a potato with no display server, you get an empty list and a sad trombone sound in spirit.
+- **Per-wallpaper custom properties** (sliders, colors, checkboxes from Wallpaper Engine) are set at startup only — linux-wallpaperengine's IPC only knows about 6 keys. Sorry, your 15 custom sliders for "Lava Lamp But With Cats" will stay at defaults.
+
+---
+
+## 📜 Changelog
+
+### v1.5 — "The Bug Hunt"
+
+- **3D Camera Zoom IPC** — `camerazoom` control file key + C++ renderer integration
+- **Per-monitor startup** — restores the last active monitor, not every monitor on the planet
+- **Wallpaper swap hang fix** — kill by socket path, not by vague `pkill -f` pattern matching
+- **Flip-aware positioning** — arrow keys and pan controls reverse direction when wallpaper is flipped
+- **10+ race conditions closed** — stale callbacks, IPC file collisions, closure capture bugs, stacked timers
+- **I/O debounce** — slider drags no longer melt your SSD with JSON thrash
+- **Wayland fallback** — `wlr-randr` detection when `xrandr` is unavailable
+- **Broken desktop file fixed** — `~` in `.desktop` files doesn't work, who knew
+- **Corrupted JSON backup** — if your config files grow a mustache, they get backed up before being replaced
+- **Version-pinned deps** — `customtkinter>=5.2.0`, `Pillow>=10.0.0`
+
+### v1.4 — "Scene/Web Wallpapers"
+
+- Scene and web wallpaper support via `linux-wallpaperengine`
+- IPC control file (`/tmp/tuxpaper-{monitor}.ctl`)
+- PKG extractor for local `.pkg` files
+- Per-wallpaper scaling modes for scene wallpapers
+
+### v1.3 — "Multi-Monitor Mania"
+
+- Per-monitor wallpaper mode with independent settings
+- Mode state persistence ("All" vs "Per Monitor")
+- Fixed grid and canvas scrollbars
+- Fixed wallpaper flicker on startup
+
+### v1.2 — "The Great JSON-ing"
+
+- Per-wallpaper-per-monitor settings persistence
+- Settings JSON backed by composite keys (`file_path::monitor`)
+- Old-format migration support
+
+### v1.1 — "Cursed Controls"
+
+- Position D-pad, zoom slider, volume, speed, flip, rotate
+- Audio toggle with scene wallpaper restart
+- Fixed scaling mode flicker
+
+### v1.0 — "It Barely Works"
+
+- Initial release
+- Steam Workshop scanning + local folder browsing
+- Thumbnail grid with search and NSFW filter
+- mpvpaper launcher
+- Autostart and headless mode
+
+---
+
 ## 📄 License
 
-MIT — do what you like.
+MIT — do what you like. If you make something cool with it, consider sharing.

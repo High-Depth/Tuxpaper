@@ -17,9 +17,9 @@ fi
 
 SOCKET="/tmp/mpvpaper-socket-${MONITOR}"
 
-# Kill only the mpvpaper using this socket path — leaves other monitors alone
-pkill -f "input-ipc-server=${SOCKET}" 2>/dev/null || true
-sleep 0.2
+# Kill every process tied to this socket (mpvpaper wrapper + mpv child)
+pkill -f "${SOCKET}" 2>/dev/null || true
+sleep 0.5
 
 # Set audio option based on flag
 if [ "$AUDIO_FLAG" = "0" ]; then

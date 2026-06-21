@@ -5,6 +5,7 @@ Test script for Tuxpaper Engine - verifies Steam Workshop scanning
 
 import os
 import json
+import subprocess
 from pathlib import Path
 
 WORKSHOP_PATH = os.path.expanduser("~/.local/share/Steam/steamapps/workshop/content/431960")
@@ -76,8 +77,8 @@ def test_mpvpaper():
     print("\nTesting mpvpaper installation:")
     
     try:
-        result = os.system("which mpvpaper > /dev/null 2>&1")
-        if result == 0:
+        result = subprocess.run(["which", "mpvpaper"], capture_output=True, text=True)
+        if result.returncode == 0:
             print("✅ mpvpaper is installed")
             return True
         else:

@@ -5,8 +5,9 @@ Debug script to test application startup process
 
 import sys
 import os
-sys.path.append('/home/xazel/.local/share/Tuxpaper')
-os.chdir('/home/xazel/.local/share/Tuxpaper')
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
+os.chdir(script_dir)
 
 import customtkinter as ctk
 from tuxpaper import TuxpaperApp, WallpaperScanner, WallpaperManager

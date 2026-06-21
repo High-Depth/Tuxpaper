@@ -19,7 +19,7 @@ fi
 
 # Kill any existing linux-wallpaperengine for this monitor
 pkill -f "linux-wallpaperengine.*--screen-root ${MONITOR}" 2>/dev/null || true
-sleep 0.3
+sleep 0.5
 
 # Build command
 CMD=("linux-wallpaperengine" "--screen-root" "$MONITOR" "--bg" "$FOLDER")
@@ -28,7 +28,10 @@ CMD=("linux-wallpaperengine" "--screen-root" "$MONITOR" "--bg" "$FOLDER")
 if [ "$SCALING" = "center" ]; then
     SCALING="fit"
 fi
-if [ "$SCALING" = "stretch" ] || [ "$SCALING" = "fill" ] || [ "$SCALING" = "fit" ]; then
+if [ "$SCALING" = "free" ]; then
+    SCALING="default"
+fi
+if [ "$SCALING" = "stretch" ] || [ "$SCALING" = "fill" ] || [ "$SCALING" = "default" ] || [ "$SCALING" = "fit" ]; then
     CMD+=("--scaling" "$SCALING")
 fi
 
@@ -43,5 +46,6 @@ if [ "$VOLUME" -lt 100 ]; then
 fi
 
 CMD+=("--disable-mouse" "--disable-parallax")
+CMD+=("--ipc-file" "/tmp/tuxpaper-${MONITOR}.ctl")
 
 nohup "${CMD[@]}" >/dev/null 2>&1 &

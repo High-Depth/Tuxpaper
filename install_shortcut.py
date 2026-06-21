@@ -8,11 +8,10 @@ DESKTOP_DIR = os.path.expanduser("~/.local/share/applications")
 DESKTOP_FILE = os.path.join(DESKTOP_DIR, "tuxpaper.desktop")
 ICON = os.path.join(PROJECT_DIR, "icons", "tuxpaper.svg")
 RUN_SCRIPT = os.path.join(PROJECT_DIR, "run.sh")
+REPO_DESKTOP = os.path.join(PROJECT_DIR, "tuxpaper.desktop")
 
 
-def create_desktop():
-    os.makedirs(DESKTOP_DIR, exist_ok=True)
-
+def _write_desktop(path):
     exec_cmd = RUN_SCRIPT
     icon = ICON if os.path.exists(ICON) else "preferences-desktop-wallpaper"
 
@@ -31,10 +30,16 @@ StartupNotify=true
 Path={PROJECT_DIR}
 """
 
-    with open(DESKTOP_FILE, 'w') as f:
+    with open(path, 'w') as f:
         f.write(content)
-    os.chmod(DESKTOP_FILE, 0o755)
-    print(f"Shortcut created: {DESKTOP_FILE}")
+    os.chmod(path, 0o755)
+    print(f"Shortcut created: {path}")
+
+
+def create_desktop():
+    os.makedirs(DESKTOP_DIR, exist_ok=True)
+    _write_desktop(DESKTOP_FILE)
+    _write_desktop(REPO_DESKTOP)
 
     try:
         subprocess.run(['update-desktop-database', DESKTOP_DIR],

@@ -1,13 +1,13 @@
 [Desktop Entry]
-Version=1.0
+Version=1.3
 Type=Application
 Name=Tuxpaper Engine
 GenericName=Animated Wallpaper Manager
 Comment=Manage and apply animated wallpapers
-Exec=~/.local/share/Tuxpaper/run.sh
-Icon=~/.local/share/Tuxpaper/icons/tuxpaper.svg
+Exec=/home/xazel/.local/share/Tuxpaper/run.sh
+Icon=/home/xazel/.local/share/Tuxpaper/icons/tuxpaper.svg
 Terminal=false
-Categories=Utility;Settings;DesktopSettings;
-Keywords=wallpaper;background;video;animated;
+Categories=Utility;Settings;DesktopSettings;GTK;
+Keywords=wallpaper;background;video;animated;mpvpaper;
 StartupNotify=true
-Path=~/.local/share/Tuxpaper
+Path=/home/xazel/.local/share/Tuxpaper
