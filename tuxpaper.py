@@ -2435,6 +2435,16 @@ X-GNOME-Autostart-enabled=true
             self._tray_icon = None
             self._tray_thread = None
 
+    def _toggle_tray(self):
+        self.tray_enabled = bool(self.tray_toggle.get())
+        if self.tray_enabled:
+            self._setup_tray_icon()
+        else:
+            self._cleanup_tray()
+        settings = WallpaperScanner.load_settings()
+        settings["tray_enabled"] = self.tray_enabled
+        WallpaperScanner.save_settings(settings)
+
     def _tray_toggle_window(self):
         if self.winfo_viewable():
             self.withdraw()
