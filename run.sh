@@ -13,8 +13,10 @@ if [ ! -d "$SCRIPT_DIR/venv" ]; then
         sudo apt install -y python3-venv
     fi
     python3 -m venv "$SCRIPT_DIR/venv"
-    "$SCRIPT_DIR/venv/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
 fi
+
+# Update/install dependencies every time (new ones may have been added)
+"$SCRIPT_DIR/venv/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
 
 # Activate virtual environment and run
 if [ -d "$SCRIPT_DIR/venv" ]; then

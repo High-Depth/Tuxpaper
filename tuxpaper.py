@@ -12,7 +12,10 @@ import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image, ImageDraw
 import pkg_extractor
-import pystray
+try:
+    import pystray
+except ImportError:
+    pystray = None
 
 
 def truncate_text(text, max_length=40):
@@ -513,7 +516,7 @@ class TuxpaperApp(ctk.CTk):
         self.load_wallpapers()
         self.auto_apply_last_wallpaper_on_startup()
 
-        if self.tray_enabled:
+        if self.tray_enabled and pystray is not None:
             self._setup_tray_icon()
 
         self.bind('<Configure>', self._on_window_resize)
@@ -690,7 +693,9 @@ class TuxpaperApp(ctk.CTk):
                                           command=self._toggle_tray,
                                           font=ctk.CTkFont(size=12))
         self.tray_toggle.grid(row=2, column=0, columnspan=3, padx=0, pady=1, sticky="w")
-        if self.tray_enabled:
+        if pystray is None:
+            self.tray_toggle.configure(state="disabled", text="Tray icon (pystray not installed)")
+        elif self.tray_enabled:
             self.tray_toggle.select()
 
         self.battery_toggle = ctk.CTkSwitch(self.behavior_frame, text="Pause on battery",
@@ -2407,7 +2412,7 @@ X-GNOME-Autostart-enabled=true
         return img
 
     def _setup_tray_icon(self):
-        if not self.tray_enabled or self._tray_icon is not None:
+        if pystray is None or not self.tray_enabled or self._tray_icon is not None:
             return
         menu = (
             pystray.MenuItem("Show / Hide", self._tray_toggle_window, default=True),
