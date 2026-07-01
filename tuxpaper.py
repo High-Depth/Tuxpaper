@@ -7,11 +7,12 @@ your own folders) with per-wallpaper settings, per-monitor support, autostart,
 and headless boot. All the heavy lifting is done by mpvpaper under the hood.
 """
 
-import os, json, subprocess, re, glob, math, sys, time, tkinter as tk
+import os, json, subprocess, re, glob, math, sys, time, random, threading, tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
-from PIL import Image
+from PIL import Image, ImageDraw
 import pkg_extractor
+import pystray
 
 
 def truncate_text(text, max_length=40):
@@ -111,6 +112,10 @@ class WallpaperScanner:
             "autostart_enabled": True,
             "restore_last_wallpaper": True,
             "monitor_mode": "all",
+            "tray_enabled": False,
+            "rotation_enabled": False,
+            "rotation_interval": 30,
+            "battery_aware_enabled": False,
         }
 
     @classmethod
@@ -464,6 +469,17 @@ class TuxpaperApp(ctk.CTk):
         self._pending_callbacks = []
         self._wallpaper_gen = 0  # bumped on each select to invalidate stale restore callbacks
         self._settings_save_timer = None  # debounce timer for _save_current_wallpaper_settings
+        self._rotation_timer_id = None
+        self._battery_check_timer_id = None
+        self._on_battery = False
+        self._was_playing_before_battery = False
+        self._tray_icon = None
+        self._tray_thread = None
+
+        self.rotation_enabled = self.settings.get("rotation_enabled", False)
+        self.rotation_interval = self.settings.get("rotation_interval", 30)
+        self.tray_enabled = self.settings.get("tray_enabled", False)
+        self.battery_aware = self.settings.get("battery_aware_enabled", False)
 
         # Multi-monitor state
         self.monitors = self._detect_monitors()
@@ -480,7 +496,10 @@ class TuxpaperApp(ctk.CTk):
             self._enable_controls()
             WallpaperManager.kill_all()
             self.auto_apply_last_wallpaper_on_startup()
-            self.after(1500, self.destroy)
+            if self.rotation_enabled:
+                self._start_rotation_timer()
+            else:
+                self.after(1500, self.destroy)
             return
 
         self.title("Tuxpaper Engine")
@@ -493,6 +512,9 @@ class TuxpaperApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.load_wallpapers()
         self.auto_apply_last_wallpaper_on_startup()
+
+        if self.tray_enabled:
+            self._setup_tray_icon()
 
         self.bind('<Configure>', self._on_window_resize)
 
@@ -566,11 +588,11 @@ class TuxpaperApp(ctk.CTk):
         # Search bar
         self.search_frame = ctk.CTkFrame(self.main_panel, fg_color="transparent")
         self.search_frame.grid(row=0, column=0, padx=20, pady=(15, 0), sticky="ew")
-        self.search_frame.grid_columnconfigure(0, weight=1)
+        self.search_frame.grid_columnconfigure(0, weight=0)
 
         self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Search wallpapers...",
-                                         font=ctk.CTkFont(size=13), height=32)
-        self.search_entry.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+                                         font=ctk.CTkFont(size=13), height=32, width=280)
+        self.search_entry.grid(row=0, column=0, padx=(0, 5))
         self.search_entry.bind('<Return>', self._apply_search)
 
         self.search_btn = ctk.CTkButton(self.search_frame, text="🔍", width=32, height=32,
@@ -640,7 +662,45 @@ class TuxpaperApp(ctk.CTk):
 
         self._update_monitor_button_states()
 
-        self.sidebar.grid_rowconfigure(3, weight=1)
+        # -- Behavior settings --------------------------------------------
+        self.behavior_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.behavior_frame.grid(row=2, column=0, padx=20, pady=(3, 3), sticky="ew")
+        self.behavior_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(self.behavior_frame, text="Behavior:",
+                     font=ctk.CTkFont(size=12, weight="bold"))\
+            .grid(row=0, column=0, columnspan=3, padx=0, pady=(0, 2), sticky="w")
+
+        self.rotation_toggle = ctk.CTkSwitch(self.behavior_frame, text="Auto-rotate",
+                                              command=self._toggle_rotation,
+                                              font=ctk.CTkFont(size=12))
+        self.rotation_toggle.grid(row=1, column=0, columnspan=2, padx=0, pady=1, sticky="w")
+        if self.rotation_enabled:
+            self.rotation_toggle.select()
+
+        self.rotation_interval_entry = ctk.CTkEntry(self.behavior_frame, width=64, height=28)
+        self.rotation_interval_entry.insert(0, str(self.rotation_interval))
+        self.rotation_interval_entry.grid(row=1, column=2, padx=(0, 0), pady=1, sticky="e")
+        self.rotation_interval_entry.bind("<FocusOut>", self._save_rotation_interval)
+        self.rotation_interval_entry.bind("<Return>", self._save_rotation_interval)
+        ctk.CTkLabel(self.behavior_frame, text="min", font=ctk.CTkFont(size=11))\
+            .grid(row=1, column=3, padx=(2, 0), pady=1)
+
+        self.tray_toggle = ctk.CTkSwitch(self.behavior_frame, text="Tray icon",
+                                          command=self._toggle_tray,
+                                          font=ctk.CTkFont(size=12))
+        self.tray_toggle.grid(row=2, column=0, columnspan=3, padx=0, pady=1, sticky="w")
+        if self.tray_enabled:
+            self.tray_toggle.select()
+
+        self.battery_toggle = ctk.CTkSwitch(self.behavior_frame, text="Pause on battery",
+                                             command=self._toggle_battery_aware,
+                                             font=ctk.CTkFont(size=12))
+        self.battery_toggle.grid(row=3, column=0, columnspan=3, padx=0, pady=1, sticky="w")
+        if self.battery_aware:
+            self.battery_toggle.select()
+
+        self.sidebar.grid_rowconfigure(4, weight=1)
 
         # -- Sources section ----------------------------------------------
         self.sources_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -686,7 +746,7 @@ class TuxpaperApp(ctk.CTk):
 
         # -- Action buttons (simplified) ---------------------------------
         self.button_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.button_frame.grid(row=2, column=0, padx=20, pady=3, sticky="ew")
+        self.button_frame.grid(row=3, column=0, padx=20, pady=3, sticky="ew")
         self.button_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.apply_btn = ctk.CTkButton(self.button_frame, text="Apply Wallpaper",
@@ -704,7 +764,7 @@ class TuxpaperApp(ctk.CTk):
 
         # -- All the fine-tuning controls --------------------------------
         self.controls_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
-        self.controls_frame.grid(row=3, column=0, padx=20, pady=(3, 3), sticky="nsew")
+        self.controls_frame.grid(row=4, column=0, padx=20, pady=(3, 3), sticky="nsew")
         self.controls_frame.grid_columnconfigure((0, 1), weight=1)
         self.after(200, self._update_controls_scrollbar)
 
@@ -2331,6 +2391,185 @@ X-GNOME-Autostart-enabled=true
             self._pending_callbacks.extend(scene_cbs)
 
     # ------------------------------------------------------------------
+    #  Tray icon
+    # ------------------------------------------------------------------
+
+    def _create_tray_image(self):
+        png_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "tuxpaper.png")
+        if os.path.exists(png_path):
+            return Image.open(png_path)
+        img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([2, 2, 61, 61], radius=10, fill=(60, 125, 200, 255))
+        draw.rounded_rectangle([8, 18, 24, 46], radius=4, fill=(255, 255, 255, 230))
+        draw.rounded_rectangle([28, 18, 44, 46], radius=4, fill=(255, 255, 255, 230))
+        draw.rounded_rectangle([48, 18, 56, 46], radius=4, fill=(255, 255, 255, 230))
+        return img
+
+    def _setup_tray_icon(self):
+        if not self.tray_enabled or self._tray_icon is not None:
+            return
+        menu = (
+            pystray.MenuItem("Show / Hide", self._tray_toggle_window, default=True),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Pause / Play", self._tray_toggle_pause),
+            pystray.MenuItem("Next Wallpaper", self._tray_next_wallpaper),
+            pystray.MenuItem("Volume +", lambda: self._tray_adjust_volume(10)),
+            pystray.MenuItem("Volume -", lambda: self._tray_adjust_volume(-10)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit", self._tray_quit),
+        )
+        image = self._create_tray_image()
+        self._tray_icon = pystray.Icon("tuxpaper", image, "Tuxpaper Engine", menu)
+        self._tray_thread = threading.Thread(target=self._tray_icon.run, daemon=True)
+        self._tray_thread.start()
+
+    def _cleanup_tray(self):
+        if self._tray_icon is not None:
+            self._tray_icon.stop()
+            self._tray_icon = None
+            self._tray_thread = None
+
+    def _tray_toggle_window(self):
+        if self.winfo_viewable():
+            self.withdraw()
+        else:
+            self.deiconify()
+            self.lift()
+            self.focus()
+
+    def _tray_toggle_pause(self):
+        self.after(0, self.toggle_pause)
+
+    def _tray_next_wallpaper(self):
+        self.after(0, self._pick_random_wallpaper)
+
+    def _tray_adjust_volume(self, delta):
+        def _adj():
+            self.change_volume(max(0, min(100, self.volume_level + delta)))
+        self.after(0, _adj)
+
+    def _tray_quit(self):
+        self.after(0, self._quit_via_tray)
+
+    def _quit_via_tray(self):
+        if self._rotation_timer_id:
+            self.after_cancel(self._rotation_timer_id)
+            self._rotation_timer_id = None
+        if self._battery_check_timer_id:
+            self.after_cancel(self._battery_check_timer_id)
+            self._battery_check_timer_id = None
+        if self._settings_save_timer:
+            self.after_cancel(self._settings_save_timer)
+            self._settings_save_timer = None
+        self._save_current_wallpaper_settings(force=True)
+        self._cleanup_tray()
+        self.destroy()
+
+    # ------------------------------------------------------------------
+    #  Wallpaper rotation timer
+    # ------------------------------------------------------------------
+
+    def _toggle_rotation(self):
+        self.rotation_enabled = bool(self.rotation_toggle.get())
+        if self._rotation_timer_id:
+            self.after_cancel(self._rotation_timer_id)
+            self._rotation_timer_id = None
+        if self.rotation_enabled:
+            self._start_rotation_timer()
+        settings = WallpaperScanner.load_settings()
+        settings["rotation_enabled"] = self.rotation_enabled
+        settings["rotation_interval"] = self.rotation_interval
+        WallpaperScanner.save_settings(settings)
+
+    def _save_rotation_interval(self, event=None):
+        try:
+            val = int(self.rotation_interval_entry.get())
+            if val < 1:
+                val = 1
+        except ValueError:
+            val = self.rotation_interval
+        self.rotation_interval = val
+        self.rotation_interval_entry.delete(0, "end")
+        self.rotation_interval_entry.insert(0, str(val))
+        if self.rotation_enabled:
+            if self._rotation_timer_id:
+                self.after_cancel(self._rotation_timer_id)
+            self._start_rotation_timer()
+        settings = WallpaperScanner.load_settings()
+        settings["rotation_interval"] = self.rotation_interval
+        WallpaperScanner.save_settings(settings)
+
+    def _start_rotation_timer(self):
+        if self.rotation_enabled and self.wallpapers:
+            self._rotation_timer_id = self.after(
+                self.rotation_interval * 60 * 1000, self._rotate_wallpaper
+            )
+
+    def _rotate_wallpaper(self):
+        if not self.rotation_enabled or not self.wallpapers:
+            return
+        current_path = getattr(self.current_wallpaper, 'file_path', None)
+        candidates = [w for w in self.wallpapers if w.file_path != current_path]
+        if not candidates:
+            candidates = self.wallpapers
+        chosen = random.choice(candidates)
+        self.select_wallpaper(chosen)
+        self._start_rotation_timer()
+
+    def _pick_random_wallpaper(self):
+        if not self.wallpapers:
+            return
+        chosen = random.choice(self.wallpapers)
+        self.select_wallpaper(chosen)
+
+    # ------------------------------------------------------------------
+    #  Battery-aware mode
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_on_battery():
+        try:
+            for entry in glob.glob("/sys/class/power_supply/BAT*"):
+                status_path = os.path.join(entry, "status")
+                if os.path.exists(status_path):
+                    with open(status_path) as f:
+                        if f.read().strip() == "Discharging":
+                            return True
+        except Exception:
+            pass
+        return False
+
+    def _toggle_battery_aware(self):
+        self.battery_aware = bool(self.battery_toggle.get())
+        if self._battery_check_timer_id:
+            self.after_cancel(self._battery_check_timer_id)
+            self._battery_check_timer_id = None
+        if self.battery_aware:
+            self._battery_check()
+        settings = WallpaperScanner.load_settings()
+        settings["battery_aware_enabled"] = self.battery_aware
+        WallpaperScanner.save_settings(settings)
+
+    def _battery_check(self):
+        if not self.battery_aware:
+            return
+        on_battery = self._is_on_battery()
+        if on_battery and not self._on_battery:
+            self._on_battery = True
+            self._was_playing_before_battery = not self.is_paused
+            if not self.is_paused:
+                self.toggle_pause()
+                print("Battery: wallpapers paused")
+        elif not on_battery and self._on_battery:
+            self._on_battery = False
+            if self._was_playing_before_battery:
+                self.toggle_pause()
+                print("Battery: wallpapers resumed")
+            self._was_playing_before_battery = False
+        self._battery_check_timer_id = self.after(30000, self._battery_check)
+
+    # ------------------------------------------------------------------
     #  Cleanup
     # ------------------------------------------------------------------
 
@@ -2338,12 +2577,22 @@ X-GNOME-Autostart-enabled=true
         if self._settings_save_timer:
             self.after_cancel(self._settings_save_timer)
             self._settings_save_timer = None
+        if self._rotation_timer_id:
+            self.after_cancel(self._rotation_timer_id)
+            self._rotation_timer_id = None
+        if self._battery_check_timer_id:
+            self.after_cancel(self._battery_check_timer_id)
+            self._battery_check_timer_id = None
         self._save_current_wallpaper_settings(force=True)
-        self.destroy()
+        if self.tray_enabled and self._tray_icon is not None:
+            self.withdraw()
+        else:
+            self._cleanup_tray()
+            self.destroy()
 
 
 if __name__ == "__main__":
     headless = "--headless" in sys.argv
     app = TuxpaperApp(headless=headless)
-    if not headless:
+    if not headless or app.rotation_enabled:
         app.mainloop()
